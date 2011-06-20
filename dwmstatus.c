@@ -52,7 +52,7 @@ char get_messages(char *status) {
 	notification *m = notify_get_message(&n);
 
 	// we have a message to show
-	if( m != NULL ) {printf("huuuu\n");
+	if( m != NULL ) {
 		int rem = (m->started_at+m->expires_after)-time(NULL);
 		if( rem>0 )	aprintf(status, "%d ", rem);
 		aprintf(status, "%s: %s", m->appname, m->summary );

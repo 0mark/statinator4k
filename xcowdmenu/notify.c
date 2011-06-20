@@ -190,8 +190,7 @@ notification *notify_get_message(int *n) {
 	if( messages != NULL ) {
 		// check/remove expired messages
 		while( messages!=NULL && messages->expires_after!=0 && 
-		(messages->started_at + messages->expires_after) < time(NULL) )
-		{
+		(messages->started_at + messages->expires_after) < time(NULL) ) {
 			notification *t = messages->next;
 			notify_NotificationClosed(messages->nid, 1 + messages->closed*2);
 			free(messages);

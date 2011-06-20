@@ -1,5 +1,5 @@
 // A very basic libnotify daemon
-// written by Jeremy Jay
+// original by Jeremy Jay
 
 #include <string.h>
 #include <stdio.h>
@@ -125,8 +125,7 @@ char notify_NotificationClosed(unsigned int nid, unsigned int reason) {
 
 	 DEBUG("NotificationClosed(%d, %d)\n", nid, reason);
 
-   notify_close_msg = dbus_message_new_signal("/why/is/OOP/part/of/the/protocol",
-                          "org.freedesktop.Notifications", "NotificationClosed");
+	notify_close_msg = dbus_message_new_signal("/org/freedesktop/Notifications", "org.freedesktop.Notifications", "NotificationClosed");
 	 if( notify_close_msg == NULL )
 		 return 0;
 
@@ -165,33 +164,33 @@ void _strip_body(char *text) {
 }
 
 char notify_Notify(DBusMessage *msg) {
-   DBusMessage* reply;
-	 DBusMessageIter args;
-	 const char *appname;
-	 const char *summary;
-	 const char *body;
-	 dbus_uint32_t nid=0;
-	 dbus_int32_t expires=-1;
-	 notification *ptr = messages;
-	 notification *note = NULL;
+	DBusMessage* reply;
+	DBusMessageIter args;
+	const char *appname;
+	const char *summary;
+	const char *body;
+	dbus_uint32_t nid=0;
+	dbus_int32_t expires=-1;
+	notification *ptr = messages;
+	notification *note = NULL;
 
-   serial++;
+	serial++;
 
-	 dbus_message_iter_init(msg, &args);
-	 dbus_message_iter_get_basic(&args, &appname);
-	 dbus_message_iter_next( &args );
-	 dbus_message_iter_get_basic(&args, &nid);
-	 dbus_message_iter_next( &args );
-	 dbus_message_iter_next( &args );  // skip icon
-	 dbus_message_iter_get_basic(&args, &summary);
-	 dbus_message_iter_next( &args );
-	 dbus_message_iter_get_basic(&args, &body);
-	 dbus_message_iter_next( &args );
-	 dbus_message_iter_next( &args );  // skip actions
-	 dbus_message_iter_next( &args );  // skip hints
-	 dbus_message_iter_get_basic(&args, &expires);
-	 
-	 DEBUG("Notify('%s', %u, -, '%s', '%s', -, -, %d)\n",appname, nid, summary, body, expires);
+	dbus_message_iter_init(msg, &args);
+	dbus_message_iter_get_basic(&args, &appname);
+	dbus_message_iter_next( &args );
+	dbus_message_iter_get_basic(&args, &nid);
+	dbus_message_iter_next( &args );
+	dbus_message_iter_next( &args );  // skip icon
+	dbus_message_iter_get_basic(&args, &summary);
+	dbus_message_iter_next( &args );
+	dbus_message_iter_get_basic(&args, &body);
+	dbus_message_iter_next( &args );
+	dbus_message_iter_next( &args );  // skip actions
+	dbus_message_iter_next( &args );  // skip hints
+	dbus_message_iter_get_basic(&args, &expires);
+
+	DEBUG("Notify('%s', %u, -, '%s', '%s', -, -, %d)\n",appname, nid, summary, body, expires);
 
 	 if( nid!=0 ) { // update existing message
 		 note = messages;
@@ -272,13 +271,13 @@ char notify_CloseNotification(DBusMessage *msg) {
 	 return 1;
 }
 
-// TODO: update to support urgency hints
-//   I have yet to see anything call this
+// GetCapabilites
 char notify_GetCapabilities(DBusMessage *msg) {
    DBusMessage* reply;
    DBusMessageIter args;
    DBusMessageIter subargs;
 	 int ncaps = 1;
+	
    char *caps[1] = {"body"}, **ptr = caps;  // workaround (see specs)
    serial++;
 
@@ -298,12 +297,11 @@ char notify_GetCapabilities(DBusMessage *msg) {
 	 return 0;
 }
 
-// FIXME: not sure that this returns correctly (probably wants a dict)
-//   I have yet to see anything call this
+// GetServerInformation
 char notify_GetServerInformation(DBusMessage *msg) {
    DBusMessage* reply;
    DBusMessageIter args;
-   char* info[3] = {"dwmstatus", "suckless", "0.1"};
+   char* info[4] = {"dwmstatus", "suckless", "0.1", "1.0"};
 	 serial++;
 
 	 printf("GetServerInfo called!\n");
@@ -314,7 +312,9 @@ char notify_GetServerInformation(DBusMessage *msg) {
    if (!dbus_message_iter_append_basic(&args, DBUS_TYPE_STRING, &info[0]) ||
        !dbus_message_iter_append_basic(&args, DBUS_TYPE_STRING, &info[1]) ||
        !dbus_message_iter_append_basic(&args, DBUS_TYPE_STRING, &info[2]) ||
-       !dbus_connection_send(dbus_conn, reply, &serial)) {
+	!dbus_message_iter_append_basic(&args, DBUS_TYPE_STRING, &info[3]) ||
+	!dbus_connection_send(dbus_conn, reply, &serial))
+	{
 		 return 1;
    }
 
