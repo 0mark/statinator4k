@@ -1,0 +1,10 @@
+cow-notify, fork from dwmstatus ( Jeremy Jay )
+
+Notification daemon that runs on background and executes configured command (If there isn't any executes xcowsay)
+Syntax for notifications are "<subject> body"
+
+By default there is no config file, if you want to execute custom command, then create this file : 
+$XDG_CONFIG_HOME/cow-notify/config and type command eg. "xcowsay --image myimage.png"
+
+Issues : 
+	* Fails to reply on some python programs (?)
