@@ -1,15 +1,22 @@
-/*
+/**
  * dwm status program
- *   handles libnotify events
- *   gets cpu usage directly from /proc/stats
- *   gets wifi signal level directly from /proc/net/wireless
- *   gets battery info from /proc/acpi/battery/BAT*
- *   also shows mpd song title changes (updates every 5 seconds)
- *      (connection tries once a minute)
+ *  - handles libnotify events
+ *  - gets cpu usage directly from /proc/stats
+ *  - gets wifi signal level directly from /proc/net/wireless
+ *  - gets battery info from /proc/acpi/battery/BAT*
+ * 
+ * TODO:
+ *  - Current mpd stuff needs libmpd. We could do without.
+ *    Perl example:
+ *     - not my $socket = IO::Socket::INET->new(PeerAddr => ($config{'mpdhost'}||"localhost"), PeerPort => ($config{'mpdport'}||"6600"))
+ *       $s =~ /volume: ([^\n]+)\nrepeat: ([^\n]+)\nrandom: ([^\n]+)\n[^\n]+\n[^\n]+\n[^\n]+\nplaylistlength: ([^\n]+)\n[^\n]+\nstate: ([^\n]+)\n(song: ([^\n]+)\n[^\n]+\ntime: ([^:]+):([^\n]+)\n)?/; 
+ *     - Old mpd stuff is commented out now
+ *  - Use inline funcs for formating, like get_cpu already does.
  *
  * Written by Jeremy Jay
  * December 2008
- *
+ * 
+ * Modified later by Stefan Mark, and likely others
  */
 
 #include <string.h>
@@ -25,6 +32,8 @@
 #define DEBUG(...) if(DEBUGGING) fprintf(stderr, __VA_ARGS__)
 
 #define DATE_STRING "%d %b %Y - %I:%M"
+
+#include "dwmstatus.h"
 
 static char DEBUGGING = 1;
 
@@ -82,7 +91,7 @@ char get_messages(char *status) {
 
 /////////////////////////////////////////////////////////////////////////////
 
-#ifdef USE_MPD
+/*#ifdef USE_MPD
 #include <libmpd/libmpd.h>
 
 // checks the song playing on mpd
@@ -130,7 +139,7 @@ char get_mpdsong(char *status) {
 	return 0;
 }
 
-#endif // USE_MPD
+#endif // USE_MPD*/
 
 /////////////////////////////////////////////////////////////////////////////
 
@@ -144,9 +153,9 @@ char **batteries = NULL;
 int *battery_caps = NULL;
 int total_caps=0;
 
-// aggregate battery info from all batteries
-//   if discharging or low, append to status text
-//   if really low, colorize
+/* aggregate battery info from all batteries
+ * if discharging or low, append to status text
+ * if really low, colorize */
 char get_battery(char *status) {
 	int i=0;
 	int trate=0, tremaining=0, time_remaining=0, percent=0;
@@ -307,8 +316,7 @@ char get_cpu(char *status) {
 
 	if( perc>100 ) perc=100;
 
-	//if( perc > 33 ) 
-		aprintf(status, "c=%d%% | ", perc);
+	CPU_format(status, perc);
 
 	o_running=running;
 	o_total=total;
@@ -343,9 +351,9 @@ int main(int argc, char **argv) {
 	big_statuslist[ num_big_status++ ] = get_messages;
 #endif
 
-#ifdef USE_MPD
+/*#ifdef USE_MPD
 	big_statuslist[ num_big_status++ ] = get_mpdsong;
-#endif
+#endif*/
 
 	normal_statuslist[ num_normal_status++] = get_cpu;
 
@@ -382,7 +390,7 @@ int main(int argc, char **argv) {
 			XChangeProperty(dpy, root, XA_WM_NAME, XA_STRING,
 					8, PropModeReplace, (unsigned char*)stext, strlen(stext));
 			XFlush(dpy);
-			//printf("%s\n", stext);
+			printf("%s\n", stext);
 
 			// this needs to be low enough to catch notifications quickly
 			sleep(1);
