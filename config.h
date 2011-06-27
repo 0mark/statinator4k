@@ -1,6 +1,25 @@
-unsigned int o_running=0, o_total=0;
-inline void cpu_format(char *status, cpu_stat *stat) {
-	unsigned int running = stat->user + stat->nice + stat->system, total = running + stat->idle;
+/* +++ CONFIG +++ */
+static int max_big_messages  = 0;   // max num of messages (long texts) before shortening
+static int refresh_wait      = 1;   // time between refresh in seconds
+static int max_status_length = 512; // max length of status
+#ifdef USE_NOTIFY
+static int marquee_chars     = 30;
+static int marquee_offset    = 3;
+static int message_length    = 10;
+#endif
+
+static int status_funcs_order[] = { CPU, WIFI, BATTERY, DATETIME, };
+static int message_funcs_order[] = { NOTIFY, };
+
+
+/* +++ FORMAT FUNCTIONS +++ */
+static inline void datetime_format(char *status) {
+	strftime(status + strlen(status), max_status_length - strlen(status), "%d %b %Y - %I:%M", localtime(&datetime_stat.time));
+}
+
+static inline void cpu_format(char *status) {
+	static unsigned int o_running=0, o_total=0;
+	unsigned int running = cpu_stat.user + cpu_stat.nice + cpu_stat.system, total = running + cpu_stat.idle;
 	unsigned int perc = ((running - o_running) * 100) / (total - o_total);
 
 	if(perc>100) perc=100;
@@ -25,17 +44,15 @@ inline void cpu_format(char *status, cpu_stat *stat) {
 	aprintf(status, "^[i15; ^[f%x%x0;%d^[f; ^[d;", col, 15-col, perc);
 */
 
-	o_running=running;
-	o_total=total;
+	o_running = running;
+	o_total = total;
 }
 
-
-inline void wifi_format(char *status, wifi_stat *stat) {
-	aprintf(status, "%s=%d%%", stat->devname, stat->perc);
+static inline void wifi_format(char *status) {
+	aprintf(status, "%s=%d%%", wifi_stat.devname, wifi_stat.perc);
 }
 
-
-inline void battery_format(char *status) {
+static inline void battery_format(char *status) {
 	int i;
 	int totalremaining = 0;
 
@@ -60,12 +77,9 @@ inline void battery_format(char *status) {
 	}
 }
 
-
 #ifdef USE_NOTIFY
-#define MARQUEE_CHARS 30
-#define MARQUEE_OFFSET 3
-inline void notify_format(char *status) {
-	char fmt[10];
+static inline void notify_format(char *status) {
+	char fmt[message_length];
 	int offset;
 	int remaining = (notify_stat.message->started_at + notify_stat.message->expires_after) - time(NULL);
 
@@ -75,16 +89,16 @@ inline void notify_format(char *status) {
 	aprintf(status, "%s: %s", notify_stat.message->appname, notify_stat.message->summary);
 
 	if(notify_stat.message->body[0]!=0) {
-		if(strlen(notify_stat.message->body) < MARQUEE_CHARS) {
+		if(strlen(notify_stat.message->body) < marquee_chars) {
 			aprintf(status, " [%s]", notify_stat.message->body);
 		} else {
 			offset = (time(NULL) - notify_stat.message->started_at) - 1;
-			offset *= MARQUEE_OFFSET;
-			if(offset > strlen(notify_stat.message->body) - MARQUEE_CHARS)
-				offset = strlen(notify_stat.message->body) - MARQUEE_CHARS;
+			offset *= marquee_offset;
+			if(offset > strlen(notify_stat.message->body) - marquee_chars)
+				offset = strlen(notify_stat.message->body) - marquee_chars;
 			if(offset<0)
 				offset = 0;
-			snprintf(fmt, 10, " [%%.%ds]", MARQUEE_CHARS);
+			snprintf(fmt, message_length, " [%%.%ds]", marquee_chars);
 			aprintf(status, fmt, notify_stat.message->body + offset);
 		}
 	}

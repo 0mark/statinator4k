@@ -11,12 +11,24 @@
  *     - not my $socket = IO::Socket::INET->new(PeerAddr => ($config{'mpdhost'}||"localhost"), PeerPort => ($config{'mpdport'}||"6600"))
  *       $s =~ /volume: ([^\n]+)\nrepeat: ([^\n]+)\nrandom: ([^\n]+)\n[^\n]+\n[^\n]+\n[^\n]+\nplaylistlength: ([^\n]+)\n[^\n]+\nstate: ([^\n]+)\n(song: ([^\n]+)\n[^\n]+\ntime: ([^:]+):([^\n]+)\n)?/; 
  *     - Old mpd stuff is commented out now
- *  - Use inline funcs for formating, like get_cpu already does.
+ *  - Add more data modules:
+ *    cpu clock, memory usage, acpi thermal, lm_sensors (at least thermal)
+ *  - Maybe add even more:
+ *    uptime, ibm stuff (fan speeds, bluetooth/wifi state, ...), hdd temp, hdd access, network traffic, ...
+ *  - Maybe more messages:
+ *    irssi, email, ...
+ *  - maybe use smprintf from other project
+ * QUESTIONS:
+ *  - Use sys instead of proc?
+ *  - is it a good idea to use static inline functions as formaters?
+ *  - is it better to free everything thats currently not needed and allocate new when needed?
+ * ETERNAL TODO:
+ *  - try to avoid buffer overflows
  *
  * Written by Jeremy Jay
  * December 2008
- *
  * Modified later by Stefan Mark, and likely others
+ * June 2010
  */
 
 #include <string.h>
@@ -26,43 +38,44 @@
 #include <unistd.h>
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
-
-#ifdef USE_BATTERIES
 #define __USE_BSD
 #include <dirent.h>
-#endif
-
 #ifdef USE_NOTIFY
 #include <dbus/dbus.h>
 #include "notify.h"
 #endif
 
-// appending printf macro
-#define aprintf(STR, ...) snprintf(STR+strlen(STR), 256-strlen(STR), __VA_ARGS__)
 
-#define DATE_STRING "%d %b %Y - %I:%M"
+/* macros */
+#define aprintf(STR, ...)   snprintf(STR+strlen(STR), max_status_length-strlen(STR), __VA_ARGS__)
+#define LENGTH(X)           (sizeof X / sizeof X[0])
 
+/* enmus */
+enum { BatCharged, BatCharging, BatDischarging };
 
-#ifdef USE_CPU
-typedef struct cpu_stat {
+enum { DATETIME, CPU, WIFI, BATTERY,
+#ifdef USE_NOTIFY
+	NOTIFY,
+#endif
+	NUMFUNCS, };
+
+typedef struct dstat {
+	time_t time;
+} dstat;
+
+typedef struct cstat {
 	unsigned int user;
 	unsigned int nice;
 	unsigned int system;
 	unsigned int idle;
-} cpu_stat;
-#endif
+} cstat;
 
-#ifdef USE_WIFI
-typedef struct wifi_stat {
+typedef struct wstat {
 	char devname[20];
 	unsigned int wstatus;
 	unsigned int perc;
-} wifi_stat;
-#endif
+} wstat;
 
-#ifdef USE_BATTERIES
-int num_batteries = -1;
-enum { BatCharged, BatCharging, BatDischarging };
 typedef struct bstat {
 	int state;
 	int rate;
@@ -70,69 +83,90 @@ typedef struct bstat {
 	int capacity;
 	char *name;
 } bstat;
-bstat *battery_stats;
-#endif
 
 #ifdef USE_NOTIFY
 typedef struct nstat {
 	notification *message;
 } nstat;
+#endif
+
+typedef char (*status_f)(char *);
+
+
+/* function declarations */
+static char get_datetime(char *status);
+static char get_cpu(char *status);
+static char get_wifi(char *status);
+static char get_battery(char *status);
+static void check_batteries();
+#ifdef USE_NOTIFY
+static char get_messages(char *status);
+#endif
+
+
+/* variables */
+dstat datetime_stat;
+cstat cpu_stat;
+wstat wifi_stat;
+bstat *battery_stats;
+int num_batteries = -1;
+#ifdef USE_NOTIFY
 nstat notify_stat;
 #endif
+status_f statusfuncs[] = {
+    get_datetime,
+	get_cpu,
+	get_wifi,
+	get_battery,
+#ifdef USE_NOTIFY
+	get_messages,
+#endif
+};
 
 
 #include "config.h"
 
 
-typedef char (*status_f)(char *);
-int num_big_status=0, num_normal_status=0;
-status_f big_statuslist[16];
-status_f normal_statuslist[16];
+char get_datetime(char *status) {
+	datetime_stat.time = time(NULL);
+	datetime_format(status);
+	return 1;
+}
 
-
-#ifdef USE_CPU
 char get_cpu(char *status) {
-	cpu_stat stat;
 	FILE *fp = fopen("/proc/stat", "r");
 
-	if(fscanf(fp, "cpu %u %u %u %u", &stat.user, &stat.nice, &stat.system, &stat.idle) != 4) {
+	if(fscanf(fp, "cpu %u %u %u %u", &cpu_stat.user, &cpu_stat.nice, &cpu_stat.system, &cpu_stat.idle) != 4) {
 		fclose(fp);
 		return 0;
 	}
 	fclose(fp);
 
-	cpu_format(status, &stat);
+	cpu_format(status);
 
 	return 1;
 }
-#endif
 
-
-#ifdef USE_WIFI
 char get_wifi(char *status) {
-	wifi_stat stat;
 	unsigned int ch=0;
 
 	FILE *fp = fopen("/proc/net/wireless", "r");
 	while((ch=fgetc(fp)) != '\n' && ch!=EOF);  // skip 2 header lines
 	while((ch=fgetc(fp)) != '\n' && ch!=EOF);
-	if(fscanf(fp, "%s %u %u", stat.devname, &stat.wstatus, &stat.perc) != 3) {
+	if(fscanf(fp, "%s %u %u", wifi_stat.devname, &wifi_stat.wstatus, &wifi_stat.perc) != 3) {
 		fclose(fp);
 		return 0;
 	}
 	fclose(fp);
 
-	stat.devname[strlen(stat.devname)-1] = 0;
-	wifi_format(status, &stat);
+	wifi_stat.devname[strlen(wifi_stat.devname)-1] = 0;
+	wifi_format(status);
 
 	return 1;
 }
-#endif
 
-
-#ifdef USE_BATTERIES
 char get_battery(char *status) {
-	int i=0;
+	int i = 0;
 	char label[128], value[128];
 	char filename[256];
 	FILE *fp;
@@ -140,7 +174,6 @@ char get_battery(char *status) {
 	if(num_batteries==0) return 0;
 
 	for(i=0; i<num_batteries; i++) {
-		//int rate=0, remaining=0;
 		sprintf(filename, "/proc/acpi/battery/%s/state", battery_stats[i].name);
 		fp = fopen(filename, "r");
 
@@ -173,7 +206,6 @@ char get_battery(char *status) {
 	return 1;
 }
 
-// find valid batteries in /proc/acpi/battery/BAT*
 void check_batteries() {
 	FILE *fp;
 	char label[128], value[128];
@@ -216,7 +248,6 @@ void check_batteries() {
 	}
 	num_batteries++;
 }
-#endif
 
 
 #ifdef USE_NOTIFY
@@ -234,9 +265,8 @@ char get_messages(char *status) {
 
 
 int main(int argc, char **argv) {
-	char stext[256];
-	int i = 0;
-	time_t now;
+	char stext[max_status_length];
+	int mc =0, i = 0;
 	Display *dpy;
 	Window root;
 
@@ -246,25 +276,13 @@ int main(int argc, char **argv) {
 	}
 	root = DefaultRootWindow(dpy);
 
-#ifdef USE_CPU
-	normal_statuslist[num_normal_status++] = get_cpu;
-#endif
-
-#ifdef USE_WIFI
-	normal_statuslist[num_normal_status++] = get_wifi;
-#endif
-
-#ifdef USE_BATTERIES
 	check_batteries();
-	normal_statuslist[num_normal_status++] = get_battery;
-#endif
 
 #ifdef USE_NOTIFY
 	if(!notify_init(0)) {
 		fprintf(stderr, "dwmstatus: cannot bind notification\n");
 		return 1;
 	}
-	big_statuslist[num_big_status++] = get_messages;
 #endif
 
 	while ( 1 )
@@ -272,29 +290,25 @@ int main(int argc, char **argv) {
 		if( !notify_check() )
 #endif
 		{
-			stext[0]=0;
+			stext[0] = 0;
 
-			for(i=0; i<num_big_status; i++)
-				if(big_statuslist[i](stext))
-					break;
-
-			// only add other info if no big messages
-			// (status bar isnt that big)
-			if(i==num_big_status)
-				for(i=0; i<num_normal_status; i++) {
-					normal_statuslist[ i ](stext);
+			for(i=0; i<LENGTH(message_funcs_order); i++)
+				if(statusfuncs[message_funcs_order[i]](stext)) {
+					mc++;
 					aprintf(stext, " ## ");
 				}
 
-			// add the date/time to the end
-			now = time(NULL);
-			strftime(stext+strlen(stext), 256-strlen(stext), DATE_STRING, localtime( &now ) );
+			if(mc<=max_big_messages)
+				for(i=0; i<LENGTH(status_funcs_order); i++) {
+					statusfuncs[status_funcs_order[i]](stext);
+					if(i<LENGTH(status_funcs_order)-1)
+						aprintf(stext, " ## ");
+				}
 
 			XChangeProperty(dpy, root, XA_WM_NAME, XA_STRING, 8, PropModeReplace, (unsigned char*)stext, strlen(stext));
 			XFlush(dpy);
 
-			// this needs to be low enough to catch notifications quickly
-			sleep(1);
+			sleep(refresh_wait);
 		}
 
 	return 0;
