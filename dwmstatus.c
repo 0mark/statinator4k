@@ -41,6 +41,16 @@
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #endif
+#ifdef USE_MPD
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+// backward dingsi stuff
+#define __USE_GNU
+#include <netdb.h>
+#include <string.h>
+#include <errno.h>
+#endif
 #define __USE_BSD
 #include <dirent.h>
 #ifdef USE_NOTIFY
@@ -300,6 +310,45 @@ void check_batteries() {
 	num_batteries++;
 }
 
+#ifdef USE_MPD
+int sock;  
+char get_mpd(char *status) {
+	int bytes_recieved;  
+	char recv_data[1024];
+
+	if(sock>=0) {
+		bytes_recieved = recv(sock, recv_data, 1024, 0);
+		recv_data[bytes_recieved] = '\0';
+		return 0;
+	}
+	// Now parse data!
+	return 1;
+}
+
+void check_mpd() {
+	struct hostent *host;
+	struct sockaddr_in server_addr;  
+
+	host = gethostbyname("127.0.0.1");
+
+	if((sock = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+		printf("Error opening socket\n");
+		sock = -1;
+		return;
+	}
+
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_port = htons(6600);
+	server_addr.sin_addr = *((struct in_addr *)host->h_addr);
+	memset(&(server_addr.sin_zero), 0, 8); 
+
+	if(connect(sock, (struct sockaddr *)&server_addr, sizeof(struct sockaddr)) == -1) {
+		printf("Error connecting to \n");
+		sock = -1;
+		return;
+	}
+}
+#endif
 
 #ifdef USE_NOTIFY
 char get_messages(char *status) {
