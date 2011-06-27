@@ -37,8 +37,10 @@
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
+#ifdef USE_X11
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
+#endif
 #define __USE_BSD
 #include <dirent.h>
 #ifdef USE_NOTIFY
@@ -316,6 +318,7 @@ char get_messages(char *status) {
 int main(int argc, char **argv) {
 	char stext[max_status_length];
 	int mc =0, i = 0;
+#ifdef USE_X11
 	Display *dpy;
 	Window root;
 
@@ -324,6 +327,7 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 	root = DefaultRootWindow(dpy);
+#endif
 
 	check_batteries();
 	check_clocks();
@@ -354,9 +358,12 @@ int main(int argc, char **argv) {
 						aprintf(stext, delimiter);
 				}
 
+#ifdef USE_X11
 			XChangeProperty(dpy, root, XA_WM_NAME, XA_STRING, 8, PropModeReplace, (unsigned char*)stext, strlen(stext));
 			XFlush(dpy);
-
+#else
+			printf("%s\n", stext);
+#endif
 			sleep(refresh_wait);
 		}
 
