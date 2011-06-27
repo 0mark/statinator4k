@@ -2,8 +2,9 @@
  * dwm status program
  *  - handles libnotify events
  *  - gets cpu usage directly from /proc/stats
+ *  - gets Clocks directly from /sys/devices/system/cpu/cpu?/cpufreq/scaling_cur_freq
  *  - gets wifi signal level directly from /proc/net/wireless
- *  - gets battery info from /proc/acpi/battery/BAT*
+ *  - gets battery info from /proc/acpi/battery/BAT?
  *
  * TODO:
  *  - Current mpd stuff needs libmpd. We could do without.
@@ -12,7 +13,7 @@
  *       $s =~ /volume: ([^\n]+)\nrepeat: ([^\n]+)\nrandom: ([^\n]+)\n[^\n]+\n[^\n]+\n[^\n]+\nplaylistlength: ([^\n]+)\n[^\n]+\nstate: ([^\n]+)\n(song: ([^\n]+)\n[^\n]+\ntime: ([^:]+):([^\n]+)\n)?/; 
  *     - Old mpd stuff is commented out now
  *  - Add more data modules:
- *    cpu clock, memory usage, acpi thermal, lm_sensors (at least thermal)
+ *    memory usage, acpi thermal, lm_sensors (at least thermal)
  *  - Maybe add even more:
  *    uptime, ibm stuff (fan speeds, bluetooth/wifi state, ...), hdd temp, hdd access, network traffic, ...
  *  - Maybe more messages:
@@ -53,7 +54,7 @@
 /* enmus */
 enum { BatCharged, BatCharging, BatDischarging };
 
-enum { DATETIME, CPU, WIFI, BATTERY,
+enum { DATETIME, CPU, CLOCK, WIFI, BATTERY,
 #ifdef USE_NOTIFY
 	NOTIFY,
 #endif
@@ -69,6 +70,11 @@ typedef struct cstat {
 	unsigned int system;
 	unsigned int idle;
 } cstat;
+
+typedef struct lstat {
+	int num_clocks;
+	unsigned int *clocks;
+} lstat;
 
 typedef struct wstat {
 	char devname[20];
@@ -96,6 +102,8 @@ typedef char (*status_f)(char *);
 /* function declarations */
 static char get_datetime(char *status);
 static char get_cpu(char *status);
+static char get_clock(char *status);
+static void check_clocks();
 static char get_wifi(char *status);
 static char get_battery(char *status);
 static void check_batteries();
@@ -107,6 +115,7 @@ static char get_messages(char *status);
 /* variables */
 dstat datetime_stat;
 cstat cpu_stat;
+lstat clock_stat;
 wstat wifi_stat;
 bstat *battery_stats;
 int num_batteries = -1;
@@ -114,8 +123,9 @@ int num_batteries = -1;
 nstat notify_stat;
 #endif
 status_f statusfuncs[] = {
-    get_datetime,
+	get_datetime,
 	get_cpu,
+	get_clock,
 	get_wifi,
 	get_battery,
 #ifdef USE_NOTIFY
@@ -146,6 +156,45 @@ char get_cpu(char *status) {
 
 	return 1;
 }
+
+char get_clock(char *status) {
+	char filename[256];
+	int i;
+
+	for(i=0; i<clock_stat.num_clocks; i++) {
+		snprintf(filename, 256, "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq", i);
+		FILE *fp = fopen(filename, "r");
+		if(fp==NULL)
+			return 0;
+
+		if(fscanf(fp, "%u", &clock_stat.clocks[i]) != 1) {
+			fclose(fp);
+			return 0;
+		}
+		fclose(fp);
+	}
+
+	clock_format(status);
+
+	return 1;
+}
+
+void check_clocks() {
+	struct dirent **clockdirs;
+	int i;
+
+	clock_stat.num_clocks = 0;
+	int nentries = scandir("/sys/devices/system/cpu/", &clockdirs, NULL, alphasort);
+	if(nentries<=2)
+		return;
+
+	for(i=0; i<nentries; i++) {
+		if(strncmp("cpu", clockdirs[i]->d_name, 3)==0 && clockdirs[i]->d_name[3]>='0' && clockdirs[i]->d_name[3]<='9')
+			clock_stat.num_clocks++;
+	}
+	clock_stat.clocks = calloc(sizeof(unsigned int), clock_stat.num_clocks);
+}
+
 
 char get_wifi(char *status) {
 	unsigned int ch=0;
@@ -277,6 +326,7 @@ int main(int argc, char **argv) {
 	root = DefaultRootWindow(dpy);
 
 	check_batteries();
+	check_clocks();
 
 #ifdef USE_NOTIFY
 	if(!notify_init(0)) {
@@ -295,14 +345,13 @@ int main(int argc, char **argv) {
 			for(i=0; i<LENGTH(message_funcs_order); i++)
 				if(statusfuncs[message_funcs_order[i]](stext)) {
 					mc++;
-					aprintf(stext, " ## ");
+					aprintf(stext, delimiter);
 				}
 
 			if(mc<=max_big_messages)
 				for(i=0; i<LENGTH(status_funcs_order); i++) {
-					statusfuncs[status_funcs_order[i]](stext);
-					if(i<LENGTH(status_funcs_order)-1)
-						aprintf(stext, " ## ");
+					if(statusfuncs[status_funcs_order[i]](stext) && i<LENGTH(status_funcs_order)-1)
+						aprintf(stext, delimiter);
 				}
 
 			XChangeProperty(dpy, root, XA_WM_NAME, XA_STRING, 8, PropModeReplace, (unsigned char*)stext, strlen(stext));

@@ -2,13 +2,14 @@
 static int max_big_messages  = 0;   // max num of messages (long texts) before shortening
 static int refresh_wait      = 1;   // time between refresh in seconds
 static int max_status_length = 512; // max length of status
+static char delimiter[] = " ## ";
 #ifdef USE_NOTIFY
 static int marquee_chars     = 30;
 static int marquee_offset    = 3;
 static int message_length    = 10;
 #endif
 
-static int status_funcs_order[] = { CPU, WIFI, BATTERY, DATETIME, };
+static int status_funcs_order[] = { CPU, CLOCK, WIFI, BATTERY, DATETIME, };
 static int message_funcs_order[] = { NOTIFY, };
 
 
@@ -46,6 +47,17 @@ static inline void cpu_format(char *status) {
 
 	o_running = running;
 	o_total = total;
+}
+
+static inline void clock_format(char *status) {
+	int i;
+
+	for(i=0; i<clock_stat.num_clocks; i++) {
+		if(i<clock_stat.num_clocks-1)
+			aprintf(status, "%dMhz, ", clock_stat.clocks[i] / 1000);
+		else
+			aprintf(status, "%dMhz", clock_stat.clocks[i] / 1000);
+	}
 }
 
 static inline void wifi_format(char *status) {
