@@ -1,0 +1,10 @@
+
+ dwmstatus
+ written by Jeremy Jay
+
+ self-contained dwm status program.  written using low-level C dbus API, libnotify specifications,
+ and libmpd.  gets cpu, wireless, and battery information directly from /proc filesystem.
+
+ most components are optional, see Makefile to configure.
+ 
+ feel free to modify and reuse to your hearts desire, the code is released into the public domain.
