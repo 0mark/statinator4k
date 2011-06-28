@@ -1,10 +1,12 @@
 /**
- * dwm status program
+ * simple status program
  *  - handles libnotify events
  *  - gets cpu usage directly from /proc/stats
+ *  - gets memory usage directly from /proc/meminfo
  *  - gets Clocks directly from /sys/devices/system/cpu/cpu?/cpufreq/scaling_cur_freq
  *  - gets wifi signal level directly from /proc/net/wireless
  *  - gets battery info from /proc/acpi/battery/BAT?
+ *  - gets mpd info directly from socket (WIP, does not work now!)
  *
  * TODO:
  *  - Current mpd stuff needs libmpd. We could do without.
@@ -13,7 +15,7 @@
  *       $s =~ /volume: ([^\n]+)\nrepeat: ([^\n]+)\nrandom: ([^\n]+)\n[^\n]+\n[^\n]+\n[^\n]+\nplaylistlength: ([^\n]+)\n[^\n]+\nstate: ([^\n]+)\n(song: ([^\n]+)\n[^\n]+\ntime: ([^:]+):([^\n]+)\n)?/; 
  *     - Old mpd stuff is commented out now
  *  - Add more data modules:
- *    memory usage, acpi thermal, lm_sensors (at least thermal)
+ *    acpi thermal, lm_sensors (at least thermal)
  *  - Maybe add even more:
  *    uptime, ibm stuff (fan speeds, bluetooth/wifi state, ...), hdd temp, hdd access, network traffic, ...
  *  - Maybe more messages:
@@ -66,7 +68,7 @@
 /* enmus */
 enum { BatCharged, BatCharging, BatDischarging };
 
-enum { DATETIME, CPU, CLOCK, WIFI, BATTERY,
+enum { DATETIME, CPU, MEM, CLOCK, WIFI, BATTERY,
 #ifdef USE_NOTIFY
 	NOTIFY,
 #endif
@@ -82,6 +84,13 @@ typedef struct cstat {
 	unsigned int system;
 	unsigned int idle;
 } cstat;
+
+typedef struct mstat {
+	unsigned int total;
+	unsigned int free;
+	unsigned int buffers;
+	unsigned int cached;
+} mstat;
 
 typedef struct lstat {
 	int num_clocks;
@@ -114,6 +123,7 @@ typedef char (*status_f)(char *);
 /* function declarations */
 static char get_datetime(char *status);
 static char get_cpu(char *status);
+static char get_mem(char *status);
 static char get_clock(char *status);
 static void check_clocks();
 static char get_wifi(char *status);
@@ -127,6 +137,7 @@ static char get_messages(char *status);
 /* variables */
 dstat datetime_stat;
 cstat cpu_stat;
+mstat mem_stat;
 lstat clock_stat;
 wstat wifi_stat;
 bstat *battery_stats;
@@ -137,6 +148,7 @@ nstat notify_stat;
 status_f statusfuncs[] = {
 	get_datetime,
 	get_cpu,
+	get_mem,
 	get_clock,
 	get_wifi,
 	get_battery,
@@ -165,6 +177,36 @@ char get_cpu(char *status) {
 	fclose(fp);
 
 	cpu_format(status);
+
+	return 1;
+}
+
+char get_mem(char *status) {
+	char label[128], value[128];
+	FILE *fp = fopen("/proc/meminfo", "r");
+
+	while(!feof(fp)) {
+		if(fscanf(fp, "%[^:]: %[^\n] kB\n", label, value)!=2)
+			break;
+
+		if(strncmp(label, "MemTotal", 8)==0) {
+			mem_stat.total = atoi(value);
+		}
+		else if(strncmp(label, "MemFree", 7)==0) {
+			mem_stat.free = atoi(value);
+		}
+		else if(strncmp(label, "Buffers", 7)==0) {
+			mem_stat.buffers = atoi(value);
+		}
+		else if(strncmp(label, "Cached", 67)==0) {
+			mem_stat.cached = atoi(value);
+			break;
+		}
+	}
+
+	fclose(fp);
+
+	mem_format(status);
 
 	return 1;
 }

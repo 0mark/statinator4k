@@ -9,7 +9,7 @@ static int marquee_offset    = 3;
 static int message_length    = 10;
 #endif
 
-static int status_funcs_order[] = { CPU, CLOCK, WIFI, BATTERY, DATETIME, };
+static int status_funcs_order[] = { CPU, CLOCK, MEM, WIFI, BATTERY, DATETIME, };
 static int message_funcs_order[] = { NOTIFY, };
 
 
@@ -47,6 +47,13 @@ static inline void cpu_format(char *status) {
 
 	o_running = running;
 	o_total = total;
+}
+
+static inline void mem_format(char *status) {
+	int free = mem_stat.free + mem_stat.buffers + mem_stat.cached;
+	int perc = mem_stat.total ? (free * 100) / mem_stat.total : 0;
+
+	aprintf(status, "m=%d%%", perc);
 }
 
 static inline void clock_format(char *status) {
