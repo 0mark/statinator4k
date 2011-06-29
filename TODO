@@ -1,0 +1,41 @@
+- Current mpd stuff needs libmpd. We could do without.
+  Perl example:
+   - not my $socket = IO::Socket::INET->new(PeerAddr => ($config{'mpdhost'}||"localhost"), PeerPort => ($config{'mpdport'}||"6600"))
+     $s =~ /volume: ([^\n]+)\nrepeat: ([^\n]+)\nrandom: ([^\n]+)\n[^\n]+\n[^\n]+\n[^\n]+\nplaylistlength: ([^\n]+)\n[^\n]+\nstate: ([^\n]+)\n(song: ([^\n]+)\n[^\n]+\ntime: ([^:]+):([^\n]+)\n)?/; 
+   - Old mpd stuff is commented out now
+
+- Add more data modules:
+   acpi thermal, lm_sensors (at least thermal)
+
+- Maybe add even more:
+  uptime, ibm stuff (fan speeds, bluetooth/wifi state, ...), hdd temp, hdd access, network traffic, ...
+  - Maybe more messages:
+    irssi, email, ...
+  - maybe use smprintf from other project
+
+- QUESTIONS:
+ - Use sys instead of proc?
+ - is it a good idea to use static inline functions as formaters?
+ - is it better to free everything thats currently not needed and allocate new when needed?
+ - Why is the binary compiled with the old Makefile only about a third the size than with the new one?
+   old Makefile:
+------------------------
+# X11 adds ~200k mem usage (needed for dwm / set root window title)
+WITH_X11=-DUSE_X11 -lX11
+
+# MPD Support
+WITH_MPD=-DUSE_MPD
+
+# dbus/notify adds ~250k mem usage
+WITH_NOTIFY=-DUSE_NOTIFY `pkg-config --cflags --libs dbus-1` notify.c
+
+
+CC=gcc
+CFLAGS= -std=c99 -pedantic -Wall -Os -s dwmstatus.c -o dwmstatus
+
+all:
+	${CC} ${CFLAGS} ${WITH_X11} ${WITH_MPD} ${WITH_NOTIFY}
+
+clean:
+	rm dwmstatus
+------------------------

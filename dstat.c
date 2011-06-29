@@ -8,26 +8,6 @@
  *  - gets battery info from /proc/acpi/battery/BAT?
  *  - gets mpd info directly from socket (WIP, does not work now!)
  *
- * TODO:
- *  - Current mpd stuff needs libmpd. We could do without.
- *    Perl example:
- *     - not my $socket = IO::Socket::INET->new(PeerAddr => ($config{'mpdhost'}||"localhost"), PeerPort => ($config{'mpdport'}||"6600"))
- *       $s =~ /volume: ([^\n]+)\nrepeat: ([^\n]+)\nrandom: ([^\n]+)\n[^\n]+\n[^\n]+\n[^\n]+\nplaylistlength: ([^\n]+)\n[^\n]+\nstate: ([^\n]+)\n(song: ([^\n]+)\n[^\n]+\ntime: ([^:]+):([^\n]+)\n)?/; 
- *     - Old mpd stuff is commented out now
- *  - Add more data modules:
- *    acpi thermal, lm_sensors (at least thermal)
- *  - Maybe add even more:
- *    uptime, ibm stuff (fan speeds, bluetooth/wifi state, ...), hdd temp, hdd access, network traffic, ...
- *  - Maybe more messages:
- *    irssi, email, ...
- *  - maybe use smprintf from other project
- * QUESTIONS:
- *  - Use sys instead of proc?
- *  - is it a good idea to use static inline functions as formaters?
- *  - is it better to free everything thats currently not needed and allocate new when needed?
- * ETERNAL TODO:
- *  - try to avoid buffer overflows
- *
  * Written by Jeremy Jay
  * December 2008
  * Modified later by Stefan Mark, and likely others
