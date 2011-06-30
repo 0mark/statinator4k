@@ -1,12 +1,12 @@
 include config.mk
 
-SRC = dstat.c notify.c
+SRC = s4k.c notify.c
 OBJ = ${SRC:.c=.o}
 
-all: options dstat
+all: options s4k
 
 options:
-	@echo dstat build options:
+	@echo statinator4k build options:
 	@echo "CFLAGS   = ${CFLAGS}"
 	@echo "LDFLAGS  = ${LDFLAGS}"
 	@echo "CC       = ${CC}"
@@ -21,10 +21,10 @@ config.h:
 	@echo creating $@ from config.def.h
 	@cp config.def.h $@
 
-dstat: ${OBJ}
+s4k: ${OBJ}
 	@echo CC -o $@
 	@${CC} -o $@ ${OBJ} ${LDFLAGS}
 
 clean:
 	@echo cleaning
-	@rm -f dstat ${OBJ} dstat-${VERSION}.tar.gz
+	@rm -f s4k ${OBJ} dstat-${VERSION}.tar.gz

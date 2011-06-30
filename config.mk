@@ -1,4 +1,4 @@
-# dstat version (we start with 20.1 because we can!)
+# statinator4k version (we start with 20.1 because we can!)
 VERSION = 20.1
 
 # output formater

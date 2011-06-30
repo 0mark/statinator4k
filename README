@@ -1,6 +1,6 @@
-dstat
+statinator4k (formerly known as dstat, more formerly known as dwmstatus)
 
-Simple status gatherer. dstat is based upon dwmstat (released in 2008 by
+Simple status gatherer. statinator4k is based upon dwmstat (released in 2008 by
 Jeremy Jay to the public domain)
 
  - handles libnotify events (using notify.c from dwmstat)
