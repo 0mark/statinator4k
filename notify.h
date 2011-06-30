@@ -1,5 +1,5 @@
 // A very basic libnotify daemon
-// written by Jeremy Jay
+// written by Jeremy Jay  <jeremy@pbnjay.com>
 
 // default message delay in seconds
 #define EXPIRE_DEFAULT 10

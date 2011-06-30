@@ -1,17 +1,8 @@
 /**
  * simple status program
- *  - handles libnotify events
- *  - gets cpu usage directly from /proc/stats
- *  - gets memory usage directly from /proc/meminfo
- *  - gets Clocks directly from /sys/devices/system/cpu/cpu?/cpufreq/scaling_cur_freq
- *  - gets wifi signal level directly from /proc/net/wireless
- *  - gets battery info from /proc/acpi/battery/BAT?
- *  - gets mpd info directly from socket (WIP, does not work now!)
  *
- * Written by Jeremy Jay
- * December 2008
- * Modified later by Stefan Mark, and likely others
- * June 2010
+ * Written by Jeremy Jay <jeremy@pbnjay.com> December 2008
+ * Stefan Mark <0mark@unserver.de> June 2011
  */
 
 #include <string.h>

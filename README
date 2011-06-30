@@ -11,5 +11,8 @@ Jeremy Jay to the public domain)
  - gets wifi signal level directly from /proc/net/wireless
  - gets battery info from /proc/acpi/battery/BAT?
  - gets mpd info directly from socket (WIP, does not work now!)
+ - output format for dwm, dwm with colorbar path, dwm-sprinkles and html
+   more could be easily added
 
-Configuration is done by editing config.h
+Configuration is done by editing config.h and config.mk
+

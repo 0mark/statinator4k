@@ -1,5 +1,5 @@
 // A very basic libnotify daemon
-// original by Jeremy Jay
+// original by Jeremy Jay  <jeremy@pbnjay.com>
 
 #include <string.h>
 #include <stdio.h>

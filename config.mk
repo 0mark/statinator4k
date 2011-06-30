@@ -1,6 +1,12 @@
 # dstat version (we start with 20.1 because we can!)
 VERSION = 20.1
 
+# output formater
+FORMATER = "-DFORMAT_METHOD=\"formats_dwm.h\""
+#FORMATER = "-DFORMAT_METHOD=\"formats_dwm_colorbar.h\""
+#FORMATER = "-DFORMAT_METHOD=\"formats_dwm_sprinkles.h\""
+#FORMATER = "-DFORMAT_METHOD=\"formats_html.h\""
+
 # paths
 PREFIX = /usr/local
 MANPREFIX = ${PREFIX}/share/man 
@@ -22,9 +28,9 @@ NOTIFY_FLAGS = -DUSE_NOTIFY
 INCS = -I. -I/usr/include ${X11_INCS} ${NOTIFY_INCS}
 LIBS = -L/usr/lib -lc ${X11_LIBS} ${NOTIFY_LIBS}
 
-CPPFLAGS = -DVERSION=\"${VERSION}\" ${X11_FLAGS} ${MPD_FLAGS} ${NOTIFY_FLAGS}
-CFLAGS = -g -std=c99 -pedantic -Wall -Os ${INCS} ${CPPFLAGS}
-LDFLAGS = -g ${LIBS} -Os
+CPPFLAGS = -DVERSION=\"${VERSION}\" ${X11_FLAGS} ${MPD_FLAGS} ${NOTIFY_FLAGS} ${FORMATER}
+CFLAGS = -std=c99 -pedantic -Wall -Os ${INCS} ${CPPFLAGS}
+LDFLAGS = ${LIBS}
 
 # compiler and linker
 CC = cc
