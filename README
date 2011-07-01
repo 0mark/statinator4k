@@ -8,6 +8,8 @@ Jeremy Jay to the public domain)
  - gets memory usage directly from /proc/meminfo
  - gets Clocks directly from
    /sys/devices/system/cpu/cpu?/cpufreq/scaling_cur_freq
+ - get cpu themperature directly from
+   /sys/devices/virtual/thermal/thermal_zone?/temp
  - gets network status from /proc/net/dev
  - gets wifi signal level directly from /proc/net/wireless
  - gets battery info from /proc/acpi/battery/BAT?

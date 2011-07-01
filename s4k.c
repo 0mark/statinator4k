@@ -39,7 +39,7 @@
 /* enmus */
 enum { BatCharged, BatCharging, BatDischarging };
 
-enum { DATETIME, CPU, MEM, CLOCK, NET, WIFI, BATTERY,
+enum { DATETIME, CPU, MEM, CLOCK, THERM, NET, WIFI, BATTERY,
 #ifdef USE_NOTIFY
 	NOTIFY,
 #endif
@@ -67,6 +67,11 @@ typedef struct lstat {
 	int num_clocks;
 	unsigned int *clocks;
 } lstat;
+
+typedef struct tstat {
+	int num_therms;
+	unsigned int *therms;
+} tstat;
 
 typedef struct nwstat {
 	int count;
@@ -106,6 +111,8 @@ static char get_cpu(char *status);
 static char get_mem(char *status);
 static char get_clock(char *status);
 static void check_clocks();
+static char get_therm(char *status);
+static void check_therms();
 static char get_net(char *status);
 static char get_wifi(char *status);
 static char get_battery(char *status);
@@ -120,6 +127,7 @@ dstat datetime_stat;
 cstat cpu_stat;
 mstat mem_stat;
 lstat clock_stat;
+tstat therm_stat;
 nwstat net_stat;
 wstat wifi_stat;
 bstat *battery_stats;
@@ -132,6 +140,7 @@ status_f statusfuncs[] = {
 	get_cpu,
 	get_mem,
 	get_clock,
+	get_therm,
 	get_net,
 	get_wifi,
 	get_battery,
@@ -151,6 +160,7 @@ char get_datetime(char *status) {
 }
 
 char get_cpu(char *status) {
+	// TODO: multiple CPUs!
 	FILE *fp = fopen("/proc/stat", "r");
 
 	if(fscanf(fp, "cpu %u %u %u %u", &cpu_stat.user, &cpu_stat.nice, &cpu_stat.system, &cpu_stat.idle) != 4) {
@@ -232,6 +242,45 @@ void check_clocks() {
 	clock_stat.clocks = calloc(sizeof(unsigned int), clock_stat.num_clocks);
 }
 
+char get_therm(char *status) {
+	char filename[256];
+	int i;
+
+	for(i=0; i<therm_stat.num_therms; i++) {
+		snprintf(filename, 256, "/sys/devices/virtual/thermal/thermal_zone%d/temp", i);
+
+		FILE *fp = fopen(filename, "r");
+		if(fp==NULL)
+			return 0;
+
+		if(fscanf(fp, "%u", &therm_stat.therms[i]) != 1) {
+			fclose(fp);
+			return 0;
+		}
+		fclose(fp);
+	}
+
+	therm_format(status);
+
+	return 1;
+}
+
+void check_therms() {
+	struct dirent **thermdirs;
+	int i;
+
+	therm_stat.num_therms = 0;
+	int nentries = scandir("/sys/devices/virtual/thermal", &thermdirs, NULL, alphasort);
+	if(nentries<=2)
+		return;
+
+	for(i=0; i<nentries; i++) {
+		if(strncmp("thermal_zone", thermdirs[i]->d_name, 12)==0 && thermdirs[i]->d_name[12]>='0' && thermdirs[i]->d_name[12]<='9')
+			therm_stat.num_therms++;
+	}
+	therm_stat.therms = calloc(sizeof(unsigned int), therm_stat.num_therms);
+}
+
 char get_net(char *status) {
 	unsigned int ch=0, ons, i=0;
 
@@ -258,8 +307,8 @@ char get_net(char *status) {
 		while((ch=fgetc(fp)) != '\n' && ch!=EOF);  // skip 2 header lines
 		i = 0;
 		while(!feof(fp)) {
-			net_stat.ltx[i] = net_stat.ltx[i];
-			net_stat.lrx[i] = net_stat.lrx[i];
+			net_stat.ltx[i] = net_stat.tx[i];
+			net_stat.lrx[i] = net_stat.rx[i];
 			if(ons!=net_stat.count && net_stat.count) net_stat.devnames[i] = calloc(sizeof(char), 20);
 			if(fscanf(fp, " %[^:]: %u %*u %*u %*u %*u %*u %*u %*u %u %*u %*u %*u %*u %*u %*u %*u\n", net_stat.devnames[i], &net_stat.rx[i], &net_stat.tx[i]) != 3) {
 				i++;
@@ -449,6 +498,7 @@ int main(int argc, char **argv) {
 
 	check_batteries();
 	check_clocks();
+	check_therms();
 	net_stat.count = 0;
 
 #ifdef USE_NOTIFY
@@ -481,7 +531,8 @@ int main(int argc, char **argv) {
 #ifdef USE_X11
 			XChangeProperty(dpy, root, XA_WM_NAME, XA_STRING, 8, PropModeReplace, (unsigned char*)stext, strlen(stext));
 			XFlush(dpy);
-			printf("%s\n", stext);
+			//printf("--%s--\n", stext);
+			//printf("%d\n", strlen(stext));
 #else
 			printf("%s\n", stext);
 #endif

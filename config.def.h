@@ -10,7 +10,7 @@ static int marquee_offset    = 3;
 static int message_length    = 10;
 #endif
 
-static int status_funcs_order[] = { CPU, CLOCK, MEM, NET, WIFI, BATTERY, DATETIME, };
+static int status_funcs_order[] = { CPU, CLOCK, THERM, MEM, NET, WIFI, BATTERY, DATETIME, };
 static int message_funcs_order[] = { NOTIFY, };
 
 #include FORMAT_METHOD

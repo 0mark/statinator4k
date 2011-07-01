@@ -5,16 +5,16 @@
    - Old mpd stuff is commented out now
 
 - Add more data modules:
-   acpi thermal, lm_sensors (at least thermal)
+   lm_sensors (at least thermal)
 
 - Maybe add even more:
-  uptime, ibm stuff (fan speeds, bluetooth/wifi state, ...), hdd temp, hdd access, network traffic, ...
+  uptime, ibm stuff (fan speeds, bluetooth/wifi state, ...), hdd temp, hdd access, ...
   - Maybe more messages:
     irssi, email, ...
   - maybe use smprintf from other project
+- Try to swap proc for sys, at last when proc support is deprecated or soon to be deprecated
 
 - QUESTIONS:
- - Use sys instead of proc?
  - is it a good idea to use static inline functions as formaters?
  - is it better to free everything thats currently not needed and allocate new when needed?
  - Why is the binary compiled with the new Makefile about a third bigger than with the old one?

@@ -36,6 +36,22 @@ static inline void clock_format(char *status) {
 	}
 }
 
+static inline void therm_format(char *status) {
+	int i, t;
+	// TODO: get WARNING temp from sys!
+
+	for(i=0; i<therm_stat.num_therms; i++) {
+		t = therm_stat.therms[i] / 1000;
+		if(t>75)
+			aprintf(status, "WARNING %d°", t);
+		else
+			aprintf(status, "%d°", t);
+		if(i<therm_stat.num_therms-1)
+			aprintf(status, ", ");
+	}
+	aprintf(status, "%s", delimiter);
+}
+
 static inline void net_format(char *status) {
 	int i;
 	if(net_stat.count>0) {
