@@ -39,7 +39,7 @@
 /* enmus */
 enum { BatCharged, BatCharging, BatDischarging };
 
-enum { DATETIME, CPU, MEM, CLOCK, WIFI, BATTERY,
+enum { DATETIME, CPU, MEM, CLOCK, NET, WIFI, BATTERY,
 #ifdef USE_NOTIFY
 	NOTIFY,
 #endif
@@ -67,6 +67,13 @@ typedef struct lstat {
 	int num_clocks;
 	unsigned int *clocks;
 } lstat;
+
+typedef struct nwstat {
+	int count;
+	char **devnames;
+	//unsigned int wstatus;
+	//unsigned int perc;
+} nwstat;
 
 typedef struct wstat {
 	char devname[20];
@@ -97,6 +104,7 @@ static char get_cpu(char *status);
 static char get_mem(char *status);
 static char get_clock(char *status);
 static void check_clocks();
+static char get_net(char *status);
 static char get_wifi(char *status);
 static char get_battery(char *status);
 static void check_batteries();
@@ -110,6 +118,7 @@ dstat datetime_stat;
 cstat cpu_stat;
 mstat mem_stat;
 lstat clock_stat;
+nwstat net_stat;
 wstat wifi_stat;
 bstat *battery_stats;
 int num_batteries = -1;
@@ -121,6 +130,7 @@ status_f statusfuncs[] = {
 	get_cpu,
 	get_mem,
 	get_clock,
+	get_net,
 	get_wifi,
 	get_battery,
 #ifdef USE_NOTIFY
@@ -218,6 +228,40 @@ void check_clocks() {
 			clock_stat.num_clocks++;
 	}
 	clock_stat.clocks = calloc(sizeof(unsigned int), clock_stat.num_clocks);
+}
+
+char get_net(char *status) {
+	unsigned int ch=0, ons, i=0;
+
+	ons = net_stat.count;
+	net_stat.count = 0;
+	FILE *fp = fopen("/proc/net/arp", "r");
+	while(!feof(fp)) {
+		while((ch=fgetc(fp)) != '\n' && ch!=EOF);
+		net_stat.count++;
+	}
+	net_stat.count -= 2;
+
+	if(net_stat.count>0) {
+		if(ons!=net_stat.count && net_stat.count) net_stat.devnames = calloc(sizeof(char*), net_stat.count);
+
+		rewind(fp);
+		while((ch=fgetc(fp)) != '\n' && ch!=EOF);  // skip header line
+
+		while(!feof(fp)) {
+			if(ons!=net_stat.count && net_stat.count) net_stat.devnames[i] = calloc(sizeof(char), 20);
+			if(fscanf(fp, "%*s %*s %*s %*s %*s %s\n", net_stat.devnames[i++]) != 1) {
+				fclose(fp);
+				break;
+			}
+		}
+	}
+
+	net_format(status);
+
+	fclose(fp);
+
+	return 1;
 }
 
 
@@ -393,6 +437,7 @@ int main(int argc, char **argv) {
 
 	check_batteries();
 	check_clocks();
+	net_stat.count = 0;
 
 #ifdef USE_NOTIFY
 	if(!notify_init(0)) {
@@ -407,22 +452,24 @@ int main(int argc, char **argv) {
 #endif
 		{
 			stext[0] = 0;
+			mc = 0;
 
 			for(i=0; i<LENGTH(message_funcs_order); i++)
 				if(statusfuncs[message_funcs_order[i]](stext)) {
 					mc++;
-					aprintf(stext, delimiter);
+					if(auto_delimiter) aprintf(stext, delimiter);
 				}
 
 			if(mc<=max_big_messages)
 				for(i=0; i<LENGTH(status_funcs_order); i++) {
 					if(statusfuncs[status_funcs_order[i]](stext) && i<LENGTH(status_funcs_order)-1)
-						aprintf(stext, delimiter);
+						if(auto_delimiter) aprintf(stext, delimiter);
 				}
 
 #ifdef USE_X11
 			XChangeProperty(dpy, root, XA_WM_NAME, XA_STRING, 8, PropModeReplace, (unsigned char*)stext, strlen(stext));
 			XFlush(dpy);
+			printf("%s\n", stext);
 #else
 			printf("%s\n", stext);
 #endif

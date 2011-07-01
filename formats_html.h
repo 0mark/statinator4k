@@ -1,4 +1,5 @@
 /* +++ FORMAT FUNCTIONS +++ */
+//TODO: mostly everything :D
 static inline void datetime_format(char *status) {
 	strftime(status + strlen(status), max_status_length - strlen(status), "%d %b %Y - %I:%M", localtime(&datetime_stat.time));
 }
@@ -33,6 +34,16 @@ static inline void clock_format(char *status) {
 		else
 			aprintf(status, "%dMhz", clock_stat.clocks[i] / 1000);
 	}
+}
+
+static inline void net_format(char *status) {
+	int i;
+	if(net_stat.count>0) {
+		for(i=0; i<net_stat.count; i++)
+			aprintf(status, "^[fe81;^[i37;^[f555;%s^[f0;", net_stat.devnames[i]);
+	} else
+		aprintf(status, "^[f555;^[i33;^[f;");
+	aprintf(status, "%s", delimiter);
 }
 
 static inline void wifi_format(char *status) {

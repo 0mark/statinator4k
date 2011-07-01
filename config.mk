@@ -29,7 +29,7 @@ INCS = -I. -I/usr/include ${X11_INCS} ${NOTIFY_INCS}
 LIBS = -L/usr/lib -lc ${X11_LIBS} ${NOTIFY_LIBS}
 
 CPPFLAGS = -DVERSION=\"${VERSION}\" ${X11_FLAGS} ${MPD_FLAGS} ${NOTIFY_FLAGS} ${FORMATER}
-CFLAGS = -std=c99 -pedantic -Wall -Os ${INCS} ${CPPFLAGS}
+CFLAGS = -g -std=c99 -pedantic -Wall -Os ${INCS} ${CPPFLAGS}
 LDFLAGS = ${LIBS}
 
 # compiler and linker

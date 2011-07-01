@@ -30,14 +30,31 @@ static inline void mem_format(char *status) {
 }
 
 static inline void clock_format(char *status) {
-	int i;
+	int i, clk;
+	char *s, m[]="mHz", g[]="gHz";
 
 	for(i=0; i<clock_stat.num_clocks; i++) {
+		if(clock_stat.clocks[i]>1000000) {
+			clk = clock_stat.clocks[i] / 1000000;
+			s = g;
+		} else {
+			clk = clock_stat.clocks[i] / 1000;
+			s = m;
+		}
 		if(i<clock_stat.num_clocks-1)
-			aprintf(status, "%dMhz, ", clock_stat.clocks[i] / 1000);
+			aprintf(status, "%d%s, ", clk, s);
 		else
-			aprintf(status, "%dMhz", clock_stat.clocks[i] / 1000);
+			aprintf(status, "%d%s", clk, s);
 	}
+}
+
+static inline void net_format(char *status) {
+	int i;
+	if(net_stat.count>0) {
+		for(i=0; i<net_stat.count; i++)
+			aprintf(status, "\x08%s\x01 UP", net_stat.devnames[i]);
+	} else
+		aprintf(status, "\x07net\x01 DOWN");
 }
 
 static inline void wifi_format(char *status) {
@@ -68,7 +85,7 @@ static inline void battery_format(char *status) {
 			}
 		}
 		if(totalremaining)
-			aprintf(status, " [%d:%02d], %d", totalremaining / 60, totalremaining%60, totalremaining);
+			aprintf(status, " %c[%d:%02d]", totalremaining<1800 ? (totalremaining<300 ? 6 : 7) : 8, totalremaining / 60, totalremaining%60);
 	}
 }
 

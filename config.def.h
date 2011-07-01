@@ -2,14 +2,15 @@
 static int max_big_messages  = 0;   // max num of messages (long texts) before shortening
 static int refresh_wait      = 1;   // time between refresh in seconds
 static int max_status_length = 512; // max length of status
-static char delimiter[] = " ## ";
+static int auto_delimiter    = 1;
+static char delimiter[] = " | ";
 #ifdef USE_NOTIFY
 static int marquee_chars     = 30;
 static int marquee_offset    = 3;
 static int message_length    = 10;
 #endif
 
-static int status_funcs_order[] = { CPU, CLOCK, MEM, WIFI, BATTERY, DATETIME, };
+static int status_funcs_order[] = { CPU, CLOCK, MEM, NET, WIFI, BATTERY, DATETIME, };
 static int message_funcs_order[] = { NOTIFY, };
 
 #include FORMAT_METHOD

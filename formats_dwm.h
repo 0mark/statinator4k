@@ -10,7 +10,7 @@ static inline void cpu_format(char *status) {
 
 	if(perc>100) perc=100;
 
-	aprintf(status, "c=%d%%", perc);
+	aprintf(status, "C %d%%", perc);
 
 	o_running = running;
 	o_total = total;
@@ -20,22 +20,39 @@ static inline void mem_format(char *status) {
 	int free = mem_stat.free + mem_stat.buffers + mem_stat.cached;
 	int perc = mem_stat.total ? (free * 100) / mem_stat.total : 0;
 
-	aprintf(status, "m=%d%%", perc);
+	aprintf(status, "M %d%%", perc);
 }
 
 static inline void clock_format(char *status) {
-	int i;
+	int i, clk;
+	char *s, m[]="mHz", g[]="gHz";
 
 	for(i=0; i<clock_stat.num_clocks; i++) {
+		if(clock_stat.clocks[i]>1000000) {
+			clk = clock_stat.clocks[i] / 1000000;
+			s = g;
+		} else {
+			clk = clock_stat.clocks[i] / 1000;
+			s = m;
+		}
 		if(i<clock_stat.num_clocks-1)
-			aprintf(status, "%dMhz, ", clock_stat.clocks[i] / 1000);
+			aprintf(status, "%d%s, ", clk, s);
 		else
-			aprintf(status, "%dMhz", clock_stat.clocks[i] / 1000);
+			aprintf(status, "%d%s", clk, s);
 	}
 }
 
+static inline void net_format(char *status) {
+	int i;
+	if(net_stat.count>0) {
+		for(i=0; i<net_stat.count; i++)
+			aprintf(status, "%s UP", net_stat.devnames[i]);
+	} else
+		aprintf(status, "net DOWN");
+}
+
 static inline void wifi_format(char *status) {
-	aprintf(status, "%s=%d%%", wifi_stat.devname, wifi_stat.perc);
+	aprintf(status, "%s %d%%", wifi_stat.devname, wifi_stat.perc);
 }
 
 static inline void battery_format(char *status) {
@@ -46,7 +63,7 @@ static inline void battery_format(char *status) {
 	for(i=0; i<num_batteries; i++)
 		if(battery_stats[i].state!=BatCharged) cstate = 0;
 	if(cstate) {
-		aprintf(status, "=|");
+		aprintf(status, "=D~");
 	} else {
 		aprintf(status, "||");
 		for(i=0; i<num_batteries; i++) {

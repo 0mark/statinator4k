@@ -17,6 +17,7 @@
  - Use sys instead of proc?
  - is it a good idea to use static inline functions as formaters?
  - is it better to free everything thats currently not needed and allocate new when needed?
+ - /proc/net/arp seems not to be a good decision to get network status. better ideas?
  - Why is the binary compiled with the new Makefile about a third bigger than with the old one?
    old Makefile:
 ------------------------
