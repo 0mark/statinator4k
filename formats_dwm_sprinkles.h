@@ -48,7 +48,12 @@ static inline void net_format(char *status) {
 	int i;
 	if(net_stat.count>0) {
 		for(i=0; i<net_stat.count; i++)
-			aprintf(status, "^[fe81;^[i37;^[f555;%s^[f0;", net_stat.devnames[i]);
+			if(strncmp(net_stat.devnames[i], "lo", 2)) {
+				if(i<net_stat.count-1)
+					aprintf(status, "^[fe81;^[i37;^[f555;%s^[f0;, ", net_stat.devnames[i]);
+				else
+					aprintf(status, "^[fe81;^[i37;^[f555;%s^[f0;", net_stat.devnames[i]);
+			}
 	} else
 		aprintf(status, "^[f555;^[i33;^[f;");
 	aprintf(status, "%s", delimiter);

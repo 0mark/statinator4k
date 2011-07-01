@@ -8,7 +8,7 @@ Jeremy Jay to the public domain)
  - gets memory usage directly from /proc/meminfo
  - gets Clocks directly from
    /sys/devices/system/cpu/cpu?/cpufreq/scaling_cur_freq
- - gets network status from /proc/net/arp
+ - gets network status from /proc/net/dev
  - gets wifi signal level directly from /proc/net/wireless
  - gets battery info from /proc/acpi/battery/BAT?
  - gets mpd info directly from socket (WIP, does not work now!)

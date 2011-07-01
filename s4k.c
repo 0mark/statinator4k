@@ -70,9 +70,11 @@ typedef struct lstat {
 
 typedef struct nwstat {
 	int count;
+	unsigned int *rx;
+	unsigned int *tx;
+	unsigned int *lrx;
+	unsigned int *ltx;
 	char **devnames;
-	//unsigned int wstatus;
-	//unsigned int perc;
 } nwstat;
 
 typedef struct wstat {
@@ -235,25 +237,35 @@ char get_net(char *status) {
 
 	ons = net_stat.count;
 	net_stat.count = 0;
-	FILE *fp = fopen("/proc/net/arp", "r");
+	FILE *fp = fopen("/proc/net/dev", "r");
 	while(!feof(fp)) {
 		while((ch=fgetc(fp)) != '\n' && ch!=EOF);
 		net_stat.count++;
 	}
-	net_stat.count -= 2;
+	net_stat.count -= 3;
 
 	if(net_stat.count>0) {
-		if(ons!=net_stat.count && net_stat.count) net_stat.devnames = calloc(sizeof(char*), net_stat.count);
+		if(ons!=net_stat.count) {
+			net_stat.devnames = calloc(sizeof(char*), net_stat.count);
+			net_stat.tx = calloc(sizeof(unsigned int), net_stat.count);
+			net_stat.rx = calloc(sizeof(unsigned int), net_stat.count);
+			net_stat.ltx = calloc(sizeof(unsigned int), net_stat.count);
+			net_stat.lrx = calloc(sizeof(unsigned int), net_stat.count);
+		}
 
 		rewind(fp);
-		while((ch=fgetc(fp)) != '\n' && ch!=EOF);  // skip header line
-
+		while((ch=fgetc(fp)) != '\n' && ch!=EOF);
+		while((ch=fgetc(fp)) != '\n' && ch!=EOF);  // skip 2 header lines
+		i = 0;
 		while(!feof(fp)) {
+			net_stat.ltx[i] = net_stat.ltx[i];
+			net_stat.lrx[i] = net_stat.lrx[i];
 			if(ons!=net_stat.count && net_stat.count) net_stat.devnames[i] = calloc(sizeof(char), 20);
-			if(fscanf(fp, "%*s %*s %*s %*s %*s %s\n", net_stat.devnames[i++]) != 1) {
-				fclose(fp);
+			if(fscanf(fp, " %[^:]: %u %*u %*u %*u %*u %*u %*u %*u %u %*u %*u %*u %*u %*u %*u %*u\n", net_stat.devnames[i], &net_stat.rx[i], &net_stat.tx[i]) != 3) {
+				i++;
 				break;
 			}
+			i++;
 		}
 	}
 
@@ -469,7 +481,7 @@ int main(int argc, char **argv) {
 #ifdef USE_X11
 			XChangeProperty(dpy, root, XA_WM_NAME, XA_STRING, 8, PropModeReplace, (unsigned char*)stext, strlen(stext));
 			XFlush(dpy);
-			//printf("%s\n", stext);
+			printf("%s\n", stext);
 #else
 			printf("%s\n", stext);
 #endif

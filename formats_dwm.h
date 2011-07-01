@@ -46,7 +46,12 @@ static inline void net_format(char *status) {
 	int i;
 	if(net_stat.count>0) {
 		for(i=0; i<net_stat.count; i++)
-			aprintf(status, "%s UP", net_stat.devnames[i]);
+			if(strncmp(net_stat.devnames[i], "lo", 2)) {
+				if(i<net_stat.count-1)
+					aprintf(status, "%s UP, ", net_stat.devnames[i]);
+				else
+					aprintf(status, "%s UP", net_stat.devnames[i]);
+			}
 	} else
 		aprintf(status, "net DOWN");
 }
