@@ -469,7 +469,7 @@ int main(int argc, char **argv) {
 #ifdef USE_X11
 			XChangeProperty(dpy, root, XA_WM_NAME, XA_STRING, 8, PropModeReplace, (unsigned char*)stext, strlen(stext));
 			XFlush(dpy);
-			printf("%s\n", stext);
+			//printf("%s\n", stext);
 #else
 			printf("%s\n", stext);
 #endif
