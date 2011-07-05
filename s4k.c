@@ -519,13 +519,13 @@ int main(int argc, char **argv) {
 			for(i=0; i<LENGTH(message_funcs_order); i++)
 				if(statusfuncs[message_funcs_order[i]](stext)) {
 					mc++;
-					if(auto_delimiter) aprintf(stext, delimiter);
+					if(auto_delimiter) aprintf(stext, "%s", delimiter);
 				}
 
 			if(mc<=max_big_messages)
 				for(i=0; i<LENGTH(status_funcs_order); i++) {
 					if(statusfuncs[status_funcs_order[i]](stext) && i<LENGTH(status_funcs_order)-1)
-						if(auto_delimiter) aprintf(stext, delimiter);
+						if(auto_delimiter) aprintf(stext, "%s", delimiter);
 				}
 
 #ifdef USE_X11

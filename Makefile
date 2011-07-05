@@ -28,3 +28,9 @@ s4k: ${OBJ}
 clean:
 	@echo cleaning
 	@rm -f s4k ${OBJ} dstat-${VERSION}.tar.gz
+
+install:
+	cp s4k ${PREFIX}/bin
+
+uninstall:
+	rm ${PREFIX}/bin/s4k

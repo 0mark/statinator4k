@@ -1,0 +1,5 @@
+Dependencies:
+ - X11 libs when building with support for output in root window title
+ - Dbus libs when building with notify support
+
+You need dev packages for these libs on some distribution (most Debian, Suse and RedHat based)
