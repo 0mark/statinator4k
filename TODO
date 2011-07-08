@@ -1,8 +1,8 @@
-- Current mpd stuff needs libmpd. We could do without.
-  Perl example:
-   - not my $socket = IO::Socket::INET->new(PeerAddr => ($config{'mpdhost'}||"localhost"), PeerPort => ($config{'mpdport'}||"6600"))
-     $s =~ /volume: ([^\n]+)\nrepeat: ([^\n]+)\nrandom: ([^\n]+)\n[^\n]+\n[^\n]+\n[^\n]+\nplaylistlength: ([^\n]+)\n[^\n]+\nstate: ([^\n]+)\n(song: ([^\n]+)\n[^\n]+\ntime: ([^:]+):([^\n]+)\n)?/; 
-   - Old mpd stuff is commented out now
+- Handle calloc fails
+
+- Unify error messages
+
+- Add MPD support
 
 - Add more data modules:
    lm_sensors (at least thermal)
@@ -17,6 +17,8 @@
 - QUESTIONS:
  - is it a good idea to use static inline functions as formaters?
  - is it better to free everything thats currently not needed and allocate new when needed?
+   current: everythings static
+ - is it better to keep file open instead of closing/opening repeatedly?
  - Why is the binary compiled with the new Makefile about a third bigger than with the old one?
    old Makefile:
 ------------------------

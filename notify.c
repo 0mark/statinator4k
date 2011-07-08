@@ -49,7 +49,7 @@ char notify_init(char debug_enabled) {
 // returns the first current notification or NULL ( and if n is supplied, number of total messages)
 notification *notify_get_message(int *n) {
 	notification *ptr;
-  int temp=0;
+	int temp=0;
 
 	if( n==NULL ) n=&temp;
 

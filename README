@@ -13,8 +13,9 @@ Jeremy Jay to the public domain)
  - gets network status from /proc/net/dev
  - gets wifi signal level directly from /proc/net/wireless
  - gets battery info from /proc/acpi/battery/BAT?
- - gets mpd info directly from socket (WIP, does not work now!)
- - output format for dwm, dwm with colorbar path, dwm-sprinkles and html
+ - gets cmus info directly from unix socket
+ - gets mpd info directly from port (WIP, does not work now!)
+ - output format for dwm, dwm with colorbar path, dwm-sprinkles and html (WIP)
    more could be easily added
 
 Configuration is done by editing config.h and config.mk

@@ -1,4 +1,3 @@
 report them!
 
- - html formats are incomplete
- 
+ - segfaulting some times. dont know why. got SIGSEG from glibc
