@@ -15,6 +15,7 @@ Jeremy Jay to the public domain)
  - gets battery info from /proc/acpi/battery/BAT?
  - gets cmus info directly from unix socket
  - gets mpd info directly from port (WIP, does not work now!)
+ - gets volume with alsa libs (baaaaad. need better solution!)
  - output format for dwm, dwm with colorbar path, dwm-sprinkles and html (WIP)
    more could be easily added
 

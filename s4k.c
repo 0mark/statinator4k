@@ -5,7 +5,9 @@
  * Stefan Mark <0mark@unserver.de> June 2011
  */
 
+#ifndef USE_ALSAVOL
 #define _POSIX_C_SOURCE 1
+#endif
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,15 +35,21 @@
 
 #define __USE_BSD
 #include <dirent.h>
+
+#ifdef USE_ALSAVOL
+#include "alsa/asoundlib.h"
+#endif
+
 #ifdef USE_NOTIFY
 #include <dbus/dbus.h>
 #include "notify.h"
 #endif
 
-
 /* macros */
 #define aprintf(STR, ...)   snprintf(STR+strlen(STR), max_status_length-strlen(STR), __VA_ARGS__)
 #define LENGTH(X)           (sizeof X / sizeof X[0])
+#define MAX(A, B)           ((A) > (B) ? (A) : (B))
+#define MIN(A, B)           ((A) < (B) ? (A) : (B))
 
 #define BUF_SIZE   256
 
@@ -51,6 +59,10 @@ enum { BatCharged, BatCharging, BatDischarging };
 enum { DATETIME, CPU, MEM, CLOCK, THERM, NET, WIFI, BATTERY,
 #ifdef USE_SOCKETS
 	CMUS,
+	MPD,
+#endif
+#ifdef USE_ALSAVOL
+	AVOL,
 #endif
 #ifdef USE_NOTIFY
 	NOTIFY,
@@ -122,6 +134,14 @@ typedef struct cmstat {
 } cmstat;
 #endif
 
+#ifdef USE_ALSAVOL
+typedef struct astat {
+	long vol;
+	long vol_min;
+	long vol_max;
+} astat;
+#endif
+
 #ifdef USE_NOTIFY
 typedef struct nstat {
 	notification *message;
@@ -146,6 +166,11 @@ static void check_batteries();
 #ifdef USE_SOCKETS
 static char get_cmus(char *status);
 static void check_cmus();
+static char get_mpd(char *status);
+static void check_mpd();
+#endif
+#ifdef USE_ALSAVOL
+static char get_alsavol(char *status);
 #endif
 #ifdef USE_NOTIFY
 static char get_messages(char *status);
@@ -164,8 +189,18 @@ bstat *battery_stats;
 int num_batteries;
 #ifdef USE_SOCKETS
 static cmstat cmus_stat;
-int cmus_sock = -1;
+int cmus_sock;
+static cmstat mpd_stat;
+int mpd_sock;
+#ifndef USE_ALSAVOL
 FILE *cmus_fp;
+FILE *mpd_fp;
+#endif
+int cmus_connect = 0;
+int mpd_connect = 0;
+#endif
+#ifdef USE_ALSAVOL
+static astat alsavol_stat;
 #endif
 #ifdef USE_NOTIFY
 static nstat notify_stat;
@@ -181,6 +216,10 @@ static const status_f statusfuncs[] = {
 	get_battery,
 #ifdef USE_SOCKETS
 	get_cmus,
+	get_mpd,
+#endif
+#ifdef USE_ALSAVOL
+	get_alsavol,
 #endif
 #ifdef USE_NOTIFY
 	get_messages,
@@ -498,22 +537,40 @@ char get_cmus(char*status) {
     static const char cmd[] = "status\n";
 	static char type[128], value[128], tag[128], value2[128];
 	int tvol = 0;
+#ifdef USE_ALSAVOL
+#define SOCKBUFZIZE 1024
+	int n, bufp = 0;
+	static char buf[SOCKBUFZIZE];
+#endif
 
-	if(cmus_sock<0) {
+	if(cmus_connect!=1) {
 		check_cmus();
 		return 0;
 	}
 
     if(send(cmus_sock, cmd, strlen(cmd), MSG_NOSIGNAL)<0) {
-		fclose(cmus_fp);
 		close(cmus_sock);
-		cmus_sock = -1;
 		return 0;
 	}
 
+#ifdef USE_ALSAVOL
+	n = read(cmus_sock, buf, SOCKBUFZIZE);
+	buf[n] = 0;
+
+	while(bufp<n) {
+	    //        this is awfull hack, i think. There have to be a sober solution...
+		if(sscanf(buf+bufp, "%s %[^\n]\n", type, value) != 2) {
+			break;
+		}
+		// TODO: find a sensible replacement for this ugly hack.
+		// Before i used fdopen, but that need #define _POSIX_C_SOURCE 1, which conflicts with alsa...
+		bufp+=strlen(type) + strlen(value) + 2;
+#else
 	while(cmus_fp && !feof(cmus_fp)) {
 		if(fscanf(cmus_fp, "%s %[^\n]\n", type, value) != 2)
 			break;
+#endif
+
 		if(strncmp(type, "status", 6)==0) {
 			if(strncmp(value, "playing", 7)==0)
 				cmus_stat.status = 1;
@@ -565,7 +622,7 @@ void check_cmus() {
     struct sockaddr_un saun;
 
     if((cmus_sock = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
-        cmus_sock = -1;
+        cmus_connect = 0;
         return;
     }
 
@@ -578,49 +635,180 @@ void check_cmus() {
     len = sizeof(saun.sun_family) + strlen(saun.sun_path);
 
     if(connect(cmus_sock, (struct sockaddr *)&saun, len) < 0) {
-        cmus_sock = -1;
+        close(cmus_sock);
+		cmus_connect = 0;
         return;
     }
 
+    cmus_connect = 1;
+
+#ifndef USE_ALSAVOL
 	cmus_fp = fdopen(cmus_sock, "r");
+#endif
 	cmus_stat.volume = 0;
 }
 
-char get_mpd(char *status) {
-	/*int bytes_recieved;  
-	char recv_data[1024];
+char get_mpd(char*status) {
+    static const char cmd[] = "status\ncurrentsong\n";
+	static char type[128], value[128];
+	char *dp;
+#ifdef USE_ALSAVOL
+#define SOCKBUFZIZE 1024
+	int n, bufp = 0;
+	static char buf[SOCKBUFZIZE];
+#endif
 
-	if(mpd_sock>=0) {
-		bytes_recieved = recv(mpd_sock, recv_data, 1024, 0);
-		recv_data[bytes_recieved] = '\0';
+	if(mpd_connect!=1) {
+		check_mpd();
 		return 0;
 	}
-	// Now parse data!*/
-	return 0;
+
+    if(send(mpd_sock, cmd, strlen(cmd), MSG_NOSIGNAL)<0) {
+		close(mpd_sock);
+		return 0;
+	}
+
+#ifdef USE_ALSAVOL
+	n = read(mpd_sock, buf, SOCKBUFZIZE);
+	buf[n] = 0;
+
+	while(bufp<n) {
+	    //        this is awfull hack, i think. There have to be a sober solution...
+		if(sscanf(buf+bufp, "%[^:]: %[^\n]\n", type, value) != 2) {
+			bufp+=strlen(type) + strlen(value) + 3;
+			continue;
+		}
+		// TODO: find a sensible replacement for this ugly hack.
+		// Before i used fdopen, but that need #define _POSIX_C_SOURCE 1, which conflicts with alsa...
+		bufp+=strlen(type) + strlen(value) + 3;
+#else
+	while(mpd_fp && !feof(mpd_fp)) {
+		if(fscanf(mpd_fp, "%[^:]: %[^\n]\n", type, value) != 2)
+			continue;
+#endif
+
+		if(strncmp(type, "state", 5)==0) {
+			if(strncmp(value, "play", 4)==0)
+				mpd_stat.status = 1;
+			else if(strncmp(value, "stop", 4)==0)
+				mpd_stat.status = 2;
+			else
+				mpd_stat.status = 0;
+		} else if(strncmp(type, "time", 4)==0) {
+			mpd_stat.position = atoi(value);
+			dp = strstr(value, ":");
+			dp++;
+			mpd_stat.duration = atoi(dp);
+		} else if(strncmp(type, "Artist", 6)==0) {
+			strncpy(mpd_stat.artist, value, 128);
+		} else if(strncmp(type, "Album", 5)==0) {
+			strncpy(mpd_stat.album, value, 128);
+		} else if(strncmp(type, "Title", 5)==0) {
+			strncpy(mpd_stat.title, value, 128);
+		} else if(strncmp(type, "repeat", 6)==0) {
+			if(strncmp(value, "1", 1)==0)
+				mpd_stat.repeat = 1;
+			else
+				mpd_stat.repeat = 0;
+		} else if(strncmp(type, "random", 6)==0) {
+			if(strncmp(value, "1", 1)==0)
+				mpd_stat.shuffle = 1;
+			else
+				mpd_stat.shuffle = 0;
+		} else if(strncmp(type, "volume", 6)==0) {
+			mpd_stat.volume = atoi(value);
+		}
+	}
+	// TODO: Bad!
+	cmus_stat = mpd_stat;
+	cmus_format(status);
+
+	return 1;
 }
 
 void check_mpd() {
-/*	struct hostent *host;
-	struct sockaddr_in server_addr;  
+    int flags;
+	struct hostent *host;
+    struct sockaddr_in sain;
 
-	host = gethostbyname("127.0.0.1");
+	host = gethostbyname(mpd_adress);
 
-	if((mpd_sock = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-		printf("Error opening socket\n");
-		mpd_sock = -1;
-		return;
+    if((mpd_sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        printf("sock fail\n");
+		mpd_connect = 0;
+        return;
+    }
+
+	sain.sin_family = AF_INET;
+	sain.sin_port = htons(mpd_port);
+	sain.sin_addr = *((struct in_addr *)host->h_addr);
+	memset(&(sain.sin_zero), 0, 8);
+
+    if(connect(mpd_sock, (struct sockaddr *)&sain, sizeof(struct sockaddr)) < 0) {
+	perror("sock");
+        printf("con fail\n");
+        close(mpd_sock);
+		mpd_connect = 0;
+        return;
+    }
+
+	flags = fcntl(mpd_sock, F_GETFL, 0);
+	fcntl(mpd_sock, F_SETFL, flags | O_NONBLOCK);
+
+    mpd_connect = 1;
+
+#ifndef USE_ALSAVOL
+	mpd_fp = fdopen(mpd_sock, "r");
+#endif
+	mpd_stat.volume = 0;
+}
+
+#endif
+
+#ifdef USE_ALSAVOL
+// Derived from: http://blog.yjl.im/2009/05/get-volumec.html
+// TODO: we shall read all channels, not only one
+static const snd_mixer_selem_channel_id_t CHANNEL = SND_MIXER_SCHN_FRONT_LEFT;
+char get_alsavol(char *status) {
+	snd_mixer_t *h_mixer;
+	snd_mixer_selem_id_t *sid;
+	snd_mixer_elem_t *elem ;
+
+	if(snd_mixer_open(&h_mixer, 1) < 0)
+		return 0;
+
+	if(snd_mixer_attach(h_mixer, ATTACH) < 0)
+		return 0;
+
+	if(snd_mixer_selem_register(h_mixer, NULL, NULL) < 0)
+		return 0;
+
+	if(snd_mixer_load(h_mixer) < 0)
+		return 0;
+//#define __snd_alloca(ptr,type) do { *ptr = (type##_t *) alloca(type##_sizeof()); memset(*ptr, 0, type##_sizeof()); } while (0)
+//#define snd_mixer_selem_id_alloca(ptr) __snd_alloca(ptr, snd_mixer_selem_id)
+	//snd_mixer_selem_id_alloca(&sid);
+	do {
+		sid = (snd_mixer_selem_id_t *) calloc(sizeof(char), snd_mixer_selem_id_sizeof());
+		memset(sid, 0, snd_mixer_selem_id_sizeof());
+	} while (0);
+	snd_mixer_selem_id_set_index(sid, 0);
+	snd_mixer_selem_id_set_name(sid, SELEM_NAME);
+
+	if((elem = snd_mixer_find_selem(h_mixer, sid)) == NULL) {
+		free(sid);
+		return 0;
 	}
 
-	server_addr.sin_family = AF_INET;
-	server_addr.sin_port = htons(6600);
-	server_addr.sin_addr = *((struct in_addr *)host->h_addr);
-	memset(&(server_addr.sin_zero), 0, 8); 
+	snd_mixer_selem_get_playback_volume(elem, CHANNEL, &alsavol_stat.vol);
+	snd_mixer_selem_get_playback_volume_range(elem, &alsavol_stat.vol_min, &alsavol_stat.vol_max);
 
-	if(connect(mpd_sock, (struct sockaddr *)&server_addr, sizeof(struct sockaddr)) == -1) {
-		printf("Error connecting to \n");
-		mpd_sock = -1;
-		return;
-	}*/
+	snd_mixer_close(h_mixer);
+
+	alsavol_format(status);
+
+	free(sid);
+	return 1;
 }
 #endif
 
@@ -676,11 +864,13 @@ int main(int argc, char **argv) {
 			aprintf(stext, " ");
 			mc = 0;
 
+#ifndef NO_MSG_FUNCS
 			for(i=0; i<LENGTH(message_funcs_order); i++)
 				if(statusfuncs[message_funcs_order[i]](stext)) {
 					mc++;
 					if(auto_delimiter) aprintf(stext, "%s", delimiter);
 				}
+#endif
 
 			if(mc<=max_big_messages)
 				for(i=0; i<LENGTH(status_funcs_order); i++) {

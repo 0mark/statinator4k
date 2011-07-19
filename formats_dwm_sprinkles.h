@@ -165,6 +165,16 @@ static inline void cmus_format(char *status) {
 }
 #endif
 
+#ifdef USE_ALSAVOL
+static inline void alsavol_format(char *status) {
+	int tvol = alsavol_stat.vol_max - alsavol_stat.vol_min;
+	int perc = tvol ? ((alsavol_stat.vol - alsavol_stat.vol_min) * 10) / tvol : 0;
+	perc = perc>9?9:perc;
+
+	aprintf(status, "^[f%x%x%x;^[g51,%d;%s", 3, 4+5*perc/10, 3+10*perc/10, perc, delimiter);
+}
+#endif
+
 #ifdef USE_NOTIFY
 static inline void notify_format(char *status) {
 	char fmt[message_length+30];

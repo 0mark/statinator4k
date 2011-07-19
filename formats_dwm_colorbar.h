@@ -110,6 +110,34 @@ static inline void battery_format(char *status) {
 	}
 }
 
+#ifdef USE_SOCKETS
+static inline void cmus_format(char *status) {
+#ifndef USE_ALSAVOL
+	int v;
+#endif
+	if(cmus_stat.status>0) {
+		aprintf(status, "%s - %s", cmus_stat.artist, cmus_stat.title);
+		if(cmus_stat.status==1) {
+			aprintf(status, " %d/%ds %s%s", cmus_stat.position, cmus_stat.duration, cmus_stat.repeat ? "[rpt]" : "", cmus_stat.shuffle ? "^[shfl]" : "");
+#ifndef USE_ALSAVOL
+			v = cmus_stat.volume * 100 / 100;
+			aprintf(status, " %d%%", v);
+#endif
+		}
+		aprintf(status, "^[f0;%s", delimiter);
+	}
+}
+#endif
+
+#ifdef USE_ALSAVOL
+static inline void alsavol_format(char *status) {
+	int tvol = alsavol_stat.vol_max - alsavol_stat.vol_min;
+	int perc = tvol ? ((alsavol_stat.vol - alsavol_stat.vol_min) * 100) / tvol : 0;
+
+	aprintf(status, "V %d%%", perc);
+}
+#endif
+
 #ifdef USE_NOTIFY
 static inline void notify_format(char *status) {
 	char fmt[message_length];

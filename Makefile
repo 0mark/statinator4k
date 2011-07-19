@@ -1,6 +1,6 @@
 include config.mk
 
-SRC = s4k.c notify.c
+SRC = s4k.c ${NOTIFY_CFILES}
 OBJ = ${SRC:.c=.o}
 
 all: options s4k
@@ -28,6 +28,11 @@ s4k: ${OBJ}
 clean:
 	@echo cleaning
 	@rm -f s4k ${OBJ} dstat-${VERSION}.tar.gz
+
+uberclean:
+	@echo UBER cleaning
+	@rm -f s4k ${OBJ} dstat-${VERSION}.tar.gz
+	@rm -f config.h
 
 install:
 	cp s4k ${PREFIX}/bin

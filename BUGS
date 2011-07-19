@@ -1,3 +1,4 @@
 report them!
 
- - segfaulting some times. dont know why. got SIGSEG from glibc
+ - segfaulting some times, only about once in a week. No idea. Old seg is fixed.
+ - alsa volume part is not good, and also libs are not c99 compatible, forcing cmus to use bad hack (my fault)
