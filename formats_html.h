@@ -100,12 +100,12 @@ static inline void cmus_format(char *status) {
 #ifndef USE_ALSAVOL
 	int v;
 #endif
-	if(cmus_stat.status>0) {
-		aprintf(status, "%s - %s", cmus_stat.artist, cmus_stat.title);
-		if(cmus_stat.status==1) {
-			aprintf(status, " %d/%ds %s%s", cmus_stat.position, cmus_stat.duration, cmus_stat.repeat ? "[rpt]" : "", cmus_stat.shuffle ? "^[shfl]" : "");
+	if(mp_stat->status>0) {
+		aprintf(status, "%s - %s", mp_stat->artist, mp_stat->title);
+		if(mp_stat->status==1) {
+			aprintf(status, " %d/%ds %s%s", mp_stat->position, mp_stat->duration, mp_stat->repeat ? "[rpt]" : "", mp_stat->shuffle ? "^[shfl]" : "");
 #ifndef USE_ALSAVOL
-			v = cmus_stat.volume * 100 / 100;
+			v = mp_stat->volume * 100 / 100;
 			aprintf(status, " %d%%", v);
 #endif
 		}

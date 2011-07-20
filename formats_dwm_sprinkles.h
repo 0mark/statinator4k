@@ -149,14 +149,14 @@ static inline void battery_format(char *status) {
 #ifdef USE_SOCKETS
 static inline void cmus_format(char *status) {
 	int p, v;
-	if(cmus_stat.status>0) {
-		aprintf(status, " ^[feb2;%s^[f26c;-^[fe60;%s", cmus_stat.artist, cmus_stat.title);
-		if(cmus_stat.status==1) {
-			p = cmus_stat.duration ? (cmus_stat.position * 10) / cmus_stat.duration : 0;
-			v = cmus_stat.volume * 10 / 100;
+	if(mp_stat->status>0) {
+		aprintf(status, " ^[feb2;%s^[f26c;-^[fe60;%s", mp_stat->artist, mp_stat->title);
+		if(mp_stat->status==1) {
+			p = mp_stat->duration ? (mp_stat->position * 10) / mp_stat->duration : 0;
+			v = mp_stat->volume * 10 / 100;
 			if(p>9) p = 9;
 			if(v>9) v = 9;
-			aprintf(status, "^[d1;^[f26c;^[h%d;^[d1;%s%s^[d1;^[f845;^[g51,%d;", p, cmus_stat.repeat ? "^[f999;r" : "^[f555;1", cmus_stat.shuffle ? "^[f999;s" : "^[f555; ", v);
+			aprintf(status, "^[d1;^[f26c;^[h%d;^[d1;%s%s^[d1;^[f845;^[g51,%d;", p, mp_stat->repeat ? "^[f999;r" : "^[f555;1", mp_stat->shuffle ? "^[f999;s" : "^[f555; ", v);
 		}
 		aprintf(status, "^[f0;%s", delimiter);
 	} //else

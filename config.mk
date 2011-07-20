@@ -26,8 +26,8 @@ NOTIFY_FLAGS = -DUSE_NOTIFY
 NOTIFY_CFILES = notify.c
 
 # alsa mixer support adds ~400k mem usage (doh! ich HAVE to find a sane way for this!)
-ALSAVOL_LIBS = -lasound
-ALSAVOL_FLAGS = -DUSE_ALSAVOL
+#ALSAVOL_LIBS = -lasound
+#ALSAVOL_FLAGS = -DUSE_ALSAVOL
 
 INCS = -I. -I/usr/include ${X11_INCS} ${NOTIFY_INCS}
 LIBS = -L/usr/lib -lc ${X11_LIBS} ${NOTIFY_LIBS} ${ALSAVOL_LIBS}

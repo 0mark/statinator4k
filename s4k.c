@@ -3,16 +3,53 @@
  *
  * Written by Jeremy Jay <jeremy@pbnjay.com> December 2008
  * Stefan Mark <0mark@unserver.de> June 2011
+ *
+ * Sensors:
+ *   date/time (C std lib)
+ *   cpu load (/proc)
+ *   memory usage (/proc)
+ *   cpu clock (/sys)
+ *   cpu temperature (acpi, /sys)
+ *   network stat (/proc) TODO: find a way to get reliable up/down status
+ *   wifi signal strength (/proc)
+ *   battery stats (/proc)
+ *   cmus, mpd stats (socket [unix, inet])
+ *   volume setting (alsa lib) // TODO: find a better way
+ *   notify (dbus, notify.c)
+ *
+ * Planned:
+ *   uptime (/proc)
+ *   imap mail (inet socket [ssl lib])
+ *   local mail (filesystem)
+ *   fan (/proc [at least for ibm])
+ *   killswitch (/proc [at least for ibm])
+ *   display brightness (/proc [at least for ibm])
+ *   watchdoc
+ *
+ * Would have but dont know how:
+ *   hdaps
+ *
+ * Every Sensor has:
+ *  a function that gets data, named get_NAME, returning 1 on success and 0 on failure
+ *  a format function, named NAME_format
+ *  a struct variable for its data, named NAME_stat
+ *
+ * If a sensor needs some initialisation, it should be made in main. A formater has to
+ * be made at least for dwm, and copyed in every other formater.
  */
 
 #ifndef USE_ALSAVOL
-#define _POSIX_C_SOURCE 1
+// Nasty hack, because alsalib does not compile with #define _POSIX_C_SOURCE 1,
+// but fdopen is not available without. TODO: fix it!
+#define _POSIX_C_SOURCE 1 // needed for fdopen
 #endif
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
+#define __USE_BSD // needed to get scandir and alphasort
+#include <dirent.h>
 
 #ifdef USE_X11
 #include <X11/Xatom.h>
@@ -20,21 +57,16 @@
 #endif
 
 #ifdef USE_SOCKETS
-#include <sys/socket.h>
-#include <sys/types.h>
-//#include <sys/select.h>
+//#include <sys/socket.h>
+//#include <sys/types.h>
 #include <sys/un.h>
-#include <netinet/in.h>
+//#include <netinet/in.h>
 #include <fcntl.h>
-// backward dingsi stuff
-#define __USE_GNU
+#define __USE_GNU // needed because h_addr of struct hostent is deprecated, but i do not know what its replaced by
 #include <netdb.h>
-#include <string.h>
-#include <errno.h>
+//#include <string.h>
+//#include <errno.h>
 #endif
-
-#define __USE_BSD
-#include <dirent.h>
 
 #ifdef USE_ALSAVOL
 #include "alsa/asoundlib.h"
@@ -45,13 +77,17 @@
 #include "notify.h"
 #endif
 
+
 /* macros */
 #define aprintf(STR, ...)   snprintf(STR+strlen(STR), max_status_length-strlen(STR), __VA_ARGS__)
 #define LENGTH(X)           (sizeof X / sizeof X[0])
 #define MAX(A, B)           ((A) > (B) ? (A) : (B))
 #define MIN(A, B)           ((A) < (B) ? (A) : (B))
 
-#define BUF_SIZE   256
+
+/* statics */
+#define BUF_SIZE            256
+
 
 /* enmus */
 enum { BatCharged, BatCharging, BatDischarging };
@@ -69,35 +105,38 @@ enum { DATETIME, CPU, MEM, CLOCK, THERM, NET, WIFI, BATTERY,
 #endif
 	NUMFUNCS, };
 
-typedef struct dstat {
+
+/* structs */
+//TODO: propper names for the structs
+typedef struct dstat { // datetime
 	time_t time;
 } dstat;
 
-typedef struct cstat {
+typedef struct cstat { // cpu
 	unsigned int user;
 	unsigned int nice;
 	unsigned int system;
 	unsigned int idle;
 } cstat;
 
-typedef struct mstat {
+typedef struct mstat { // memory
 	unsigned int total;
 	unsigned int free;
 	unsigned int buffers;
 	unsigned int cached;
 } mstat;
 
-typedef struct lstat {
+typedef struct lstat { // clock
 	int num_clocks;
 	unsigned int *clocks;
 } lstat;
 
-typedef struct tstat {
+typedef struct tstat { // temperature
 	int num_therms;
 	unsigned int *therms;
 } tstat;
 
-typedef struct nwstat {
+typedef struct nwstat { // network
 	int count;
 	unsigned int *rx;
 	unsigned int *tx;
@@ -106,13 +145,13 @@ typedef struct nwstat {
 	char **devnames;
 } nwstat;
 
-typedef struct wstat {
+typedef struct wstat { // wifi
 	char devname[20];
 	unsigned int wstatus;
 	unsigned int perc;
 } wstat;
 
-typedef struct bstat {
+typedef struct bstat { // battery
 	int state;
 	int rate;
 	int remaining;
@@ -121,7 +160,7 @@ typedef struct bstat {
 } bstat;
 
 #ifdef USE_SOCKETS
-typedef struct cmstat {
+typedef struct mpstat { // music player
 	int status;
 	int duration;
 	int position;
@@ -131,11 +170,11 @@ typedef struct cmstat {
 	char artist[128];
 	char album[128];
 	char title[128];
-} cmstat;
+} mpstat;
 #endif
 
 #ifdef USE_ALSAVOL
-typedef struct astat {
+typedef struct astat { // volume
 	long vol;
 	long vol_min;
 	long vol_max;
@@ -143,7 +182,7 @@ typedef struct astat {
 #endif
 
 #ifdef USE_NOTIFY
-typedef struct nstat {
+typedef struct nstat { // notifications
 	notification *message;
 } nstat;
 #endif
@@ -188,9 +227,10 @@ static wstat wifi_stat;
 bstat *battery_stats;
 int num_batteries;
 #ifdef USE_SOCKETS
-static cmstat cmus_stat;
+static mpstat cmus_stat;
+static mpstat mpd_stat;
+static mpstat *mp_stat; // pointer is set in getter, so one formater for all music getter
 int cmus_sock;
-static cmstat mpd_stat;
 int mpd_sock;
 #ifndef USE_ALSAVOL
 FILE *cmus_fp;
@@ -533,6 +573,7 @@ void check_batteries() {
 }
 
 #ifdef USE_SOCKETS
+// TODO: consolidate: socket opener, line getter
 char get_cmus(char*status) {
     static const char cmd[] = "status\n";
 	static char type[128], value[128], tag[128], value2[128];
@@ -558,12 +599,9 @@ char get_cmus(char*status) {
 	buf[n] = 0;
 
 	while(bufp<n) {
-	    //        this is awfull hack, i think. There have to be a sober solution...
 		if(sscanf(buf+bufp, "%s %[^\n]\n", type, value) != 2) {
 			break;
 		}
-		// TODO: find a sensible replacement for this ugly hack.
-		// Before i used fdopen, but that need #define _POSIX_C_SOURCE 1, which conflicts with alsa...
 		bufp+=strlen(type) + strlen(value) + 2;
 #else
 	while(cmus_fp && !feof(cmus_fp)) {
@@ -612,6 +650,7 @@ char get_cmus(char*status) {
 	}
 	if(tvol) cmus_stat.volume = tvol / 2;
 
+	mp_stat = &mpd_stat;
 	cmus_format(status);
 
 	return 1;
@@ -673,13 +712,10 @@ char get_mpd(char*status) {
 	buf[n] = 0;
 
 	while(bufp<n) {
-	    //        this is awfull hack, i think. There have to be a sober solution...
 		if(sscanf(buf+bufp, "%[^:]: %[^\n]\n", type, value) != 2) {
 			bufp+=strlen(type) + strlen(value) + 3;
 			continue;
 		}
-		// TODO: find a sensible replacement for this ugly hack.
-		// Before i used fdopen, but that need #define _POSIX_C_SOURCE 1, which conflicts with alsa...
 		bufp+=strlen(type) + strlen(value) + 3;
 #else
 	while(mpd_fp && !feof(mpd_fp)) {
@@ -719,8 +755,7 @@ char get_mpd(char*status) {
 			mpd_stat.volume = atoi(value);
 		}
 	}
-	// TODO: Bad!
-	cmus_stat = mpd_stat;
+	mp_stat = &mpd_stat;
 	cmus_format(status);
 
 	return 1;
@@ -762,7 +797,6 @@ void check_mpd() {
 #endif
 	mpd_stat.volume = 0;
 }
-
 #endif
 
 #ifdef USE_ALSAVOL
@@ -785,9 +819,10 @@ char get_alsavol(char *status) {
 
 	if(snd_mixer_load(h_mixer) < 0)
 		return 0;
-//#define __snd_alloca(ptr,type) do { *ptr = (type##_t *) alloca(type##_sizeof()); memset(*ptr, 0, type##_sizeof()); } while (0)
-//#define snd_mixer_selem_id_alloca(ptr) __snd_alloca(ptr, snd_mixer_selem_id)
-	//snd_mixer_selem_id_alloca(&sid);
+	//was: 'snd_mixer_selem_id_alloca(&sid);', a macro:
+	//  #define __snd_alloca(ptr,type) do { *ptr = (type##_t *) alloca(type##_sizeof()); memset(*ptr, 0, type##_sizeof()); } while (0)
+	//  #define snd_mixer_selem_id_alloca(ptr) __snd_alloca(ptr, snd_mixer_selem_id)
+	//but for some reasons alloca is not available. TODO: check if this strange loop is necesary
 	do {
 		sid = (snd_mixer_selem_id_t *) calloc(sizeof(char), snd_mixer_selem_id_sizeof());
 		memset(sid, 0, snd_mixer_selem_id_sizeof());
@@ -845,6 +880,7 @@ int main(int argc, char **argv) {
 	check_therms();
 #ifdef USE_SOCKETS
 	check_cmus();
+	check_mpd();
 #endif
 	net_stat.count = 0;
 
