@@ -38,9 +38,9 @@
  * be made at least for dwm, and copyed in every other formater.
  */
 
-#ifndef USE_ALSAVOL
 // Nasty hack, because alsalib does not compile with #define _POSIX_C_SOURCE 1,
 // but fdopen is not available without. TODO: fix it!
+#ifndef USE_ALSAVOL
 #define _POSIX_C_SOURCE 1 // needed for fdopen
 #endif
 #include <string.h>
@@ -48,13 +48,15 @@
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
-#define __USE_BSD // needed to get scandir and alphasort
-#include <dirent.h>
 
 #ifdef USE_X11
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #endif
+
+// when defined bevore Xlibs are loaded, alsa fails
+#define __USE_BSD // needed to get scandir and alphasort
+#include <dirent.h>
 
 #ifdef USE_SOCKETS
 //#include <sys/socket.h>
