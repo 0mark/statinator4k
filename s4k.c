@@ -652,7 +652,7 @@ char get_cmus(char*status) {
 	}
 	if(tvol) cmus_stat.volume = tvol / 2;
 
-	mp_stat = &mpd_stat;
+	mp_stat = &cmus_stat;
 	cmus_format(status);
 
 	return 1;
