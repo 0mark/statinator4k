@@ -878,10 +878,10 @@ int main(int argc, char **argv) {
 	check_batteries();
 	check_clocks();
 	check_therms();
-#ifdef USE_SOCKETS
+/*#ifdef USE_SOCKETS
 	check_cmus();
 	check_mpd();
-#endif
+#endif*/
 	net_stat.count = 0;
 
 #ifdef USE_NOTIFY
