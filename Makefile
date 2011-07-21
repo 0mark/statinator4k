@@ -35,7 +35,7 @@ uberclean:
 	@rm -f config.h
 
 install:
-	cp s4k ${PREFIX}/bin
+	cp s4k ${DESTDIR}${PREFIX}/bin
 
 uninstall:
-	rm ${PREFIX}/bin/s4k
+	rm ${DESTDIR}${PREFIX}/bin/s4k
