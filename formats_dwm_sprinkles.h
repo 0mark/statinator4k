@@ -123,9 +123,12 @@ static inline void battery_format(char *status) {
 	int i, col, perc;
 	int totalremaining = 0;
 
-	int cstate = 1;
-	for(i=0; i<num_batteries; i++)
+	int cstate = 1, dstate=0, rate = 0;
+	for(i=0; i<num_batteries; i++) {
 		if(battery_stats[i].state!=BatCharged) cstate = 0;
+		if(battery_stats[i].state!=BatDischarging) dstate = 1;
+		if(battery_stats[i].rate) rate = battery_stats[i].rate;
+	}
 	if(cstate) {
 		aprintf(status, "^[f539;^[i0;^[f;");
 	} else {
@@ -135,9 +138,9 @@ static inline void battery_format(char *status) {
 			if(battery_stats[i].state==BatCharging) {
 				aprintf(status, "^[f%x0%x;^[g0,%d;^[f;", 11 - col / 2, 7 + col / 2, perc / 10);
 				totalremaining += battery_stats[i].rate ? ((battery_stats[i].capacity-battery_stats[i].remaining) * 60) / battery_stats[i].rate : 0;
-			} else if(battery_stats[i].state==BatDischarging) {
+			} else if(battery_stats[i].state==BatDischarging || (dstate==1 && battery_stats[i].state==BatCharged)) {
 				aprintf(status, "^[f%x%x0;^[g9,%d;^[f;", 15-col, col, perc / 10);
-				totalremaining += battery_stats[i].rate ? (battery_stats[i].remaining * 60) / battery_stats[i].rate : 0;
+				totalremaining += battery_stats[i].rate ? (battery_stats[i].remaining * 60) / battery_stats[i].rate : (rate ? (battery_stats[i].remaining * 60) / rate : 0);
 			}
 		}
 		if(totalremaining)
