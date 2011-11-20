@@ -126,7 +126,8 @@ static inline void battery_format(char *status) {
 	int cstate = 1, dstate=0, rate = 0;
 	for(i=0; i<num_batteries; i++) {
 		if(battery_stats[i].state!=BatCharged) cstate = 0;
-		if(battery_stats[i].state!=BatDischarging) dstate = 1;
+		if(battery_stats[i].state==BatDischarging) dstate = 1;
+		if(battery_stats[i].state==BatCharging) dstate = -1;
 		if(battery_stats[i].rate) rate = battery_stats[i].rate;
 	}
 	if(cstate) {
@@ -135,7 +136,7 @@ static inline void battery_format(char *status) {
 		for(i=0; i<num_batteries; i++) {
 			perc = battery_stats[i].capacity ? (100 * battery_stats[i].remaining) / battery_stats[i].capacity : 0;
 			col = wifi_stat.perc * 15 / 100;
-			if(battery_stats[i].state==BatCharging) {
+			if(battery_stats[i].state==BatCharging/* || (dstate==-1 && battery_stats[i].state==BatCharged)*/) {
 				aprintf(status, "^[f%x0%x;^[g0,%d;^[f;", 11 - col / 2, 7 + col / 2, perc / 10);
 				totalremaining += battery_stats[i].rate ? ((battery_stats[i].capacity-battery_stats[i].remaining) * 60) / battery_stats[i].rate : 0;
 			} else if(battery_stats[i].state==BatDischarging || (dstate==1 && battery_stats[i].state==BatCharged)) {

@@ -491,30 +491,30 @@ char get_battery(char *status) {
 		return 0;
 
 	for(i=0; i<num_batteries; i++) {
-		sprintf(filename, "/proc/acpi/battery/%s/state", battery_stats[i].name);
+		sprintf(filename, "/sys/class/power_supply/%s/uevent", battery_stats[i].name);
 		fp = fopen(filename, "r");
 		if(fp==NULL)
 			return 0;
 
 		while(!feof(fp)) {
-			if(fscanf(fp, " %[^:]: %[^\n]\n", label, value)!=2) {
+			if(fscanf(fp, "%[^=]=%[^\n]\n", label, value)!=2) {
 				fclose(fp);
 				return 0;
 			}
 
-			if(strncmp(label, "charging state", 14)==0) {
-				if(strncmp(value, "charging", 8)==0)
+			if(strncmp(label, "POWER_SUPPLY_STATUS", 19)==0) {
+				if(strncmp(value, "Charging", 8)==0)
 					battery_stats[i].state = BatCharging;
-				else if(strncmp(value, "discharging", 11)==0)
+				else if(strncmp(value, "Discharging", 11)==0)
 					battery_stats[i].state = BatDischarging;
-				else if(strncmp(value, "charged", 7)==0)
+				else if(strncmp(value, "Charged", 7)==0)
 					battery_stats[i].state = BatCharged;
 			}
-			else if(strncmp(label, "present rate", 12)==0) {
+			else if(strncmp(label, "POWER_SUPPLY_POWER_NOW", 23)==0) {
 				battery_stats[i].rate = atoi(value);
 				if(battery_stats[i].rate < 0) battery_stats[i].rate=1;
 			}
-			else if(strncmp(label, "remaining capacity", 18)==0) {
+			else if(strncmp(label, "POWER_SUPPLY_ENERGY_NOW", 22)==0) {
 				battery_stats[i].remaining = atoi(value);
 			}
 
@@ -535,7 +535,7 @@ void check_batteries() {
 	struct dirent **batdirs;
 	int i;
 
-	int nentries = scandir("/proc/acpi/battery/", &batdirs, NULL, alphasort);
+	int nentries = scandir("/sys/class/power_supply/", &batdirs, NULL, alphasort);
 	num_batteries = -1;
 	if(nentries<=2) {
 		return;
@@ -545,25 +545,25 @@ void check_batteries() {
 
 	for(i=0; i<nentries; i++) {
 		if(strlen(batdirs[i]->d_name)>=3 && strncmp("BAT", batdirs[i]->d_name, 3)==0) {
-			sprintf(filename, "/proc/acpi/battery/%s/info", batdirs[i]->d_name);
+			sprintf(filename, "/sys/class/power_supply/%s/uevent", batdirs[i]->d_name);
 			fp = fopen(filename, "r");
 			if(fp==NULL) {
 				continue;
 			}
 
 			while(fp && !feof(fp)) {
-				if(fscanf(fp, " %[^:]: %[^\n]\n", label, value) != 2)
+				if(fscanf(fp, "%[^=]=%[^\n]\n", label, value) != 2)
 					break;
 
-				if(strncmp(label, "present", 7)==0) {
-					if(strncmp(value, "no", 2)==0) break; // not present battery is not interesting
+				if(strncmp(label, "POWER_SUPPLY_PRESENT", 20)==0) {
+					if(strncmp(value, "0", 1)==0) break;  // not present battery is not interesting
 					else {                                // (might be wrong, when battery is added)
-						num_batteries++;                  // but this loop looks a bit suspect anyway...
+						num_batteries++;              // but this loop looks a bit suspect anyway...
 						battery_stats[num_batteries].name = calloc(sizeof(char), strlen(batdirs[i]->d_name));
 						strcpy(battery_stats[num_batteries].name, batdirs[i]->d_name);
 					}
 				}
-				if(strncmp(label, "last full capacity", 15)==0) {
+				if(strncmp(label, "POWER_SUPPLY_ENERGY_FULL", 23)==0) {
 					battery_stats[num_batteries].capacity = atoi(value);
 					break;
 				}
