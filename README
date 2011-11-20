@@ -4,7 +4,7 @@ Simple status gatherer. statinator4k is based upon dwmstat (released in 2008 by
 Jeremy Jay to the public domain)
 
  - handles libnotify events (using notify.c from dwmstat)
- - gets cpu usage directly from /proc/stats
+ - gets cpu usage directly from /sys/class/power
  - gets memory usage directly from /proc/meminfo
  - gets Clocks directly from
    /sys/devices/system/cpu/cpu?/cpufreq/scaling_cur_freq

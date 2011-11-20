@@ -2,8 +2,6 @@
 
 - Unify error messages
 
-- Add MPD support
-
 - Add more data modules:
    lm_sensors (at least thermal)
 

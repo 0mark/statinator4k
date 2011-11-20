@@ -35,8 +35,26 @@ uberclean:
 	@rm -f config.h
 
 install:
+	@echo installing executable file to ${DESTDIR}${PREFIX}/bin
 	@mkdir -p ${DESTDIR}${PREFIX}/bin
 	cp -f s4k ${DESTDIR}${PREFIX}/bin
+	@chmod 755 ${DESTDIR}${PREFIX}/bin/s4k
+	@sed "s#S4KSRC#${PREFIX}/share/s4k/src/#g" < s4km > ${DESTDIR}${PREFIX}/bin/s4km
+	@chmod 755 ${DESTDIR}${PREFIX}/bin/s4km
+	@#TODO: write tfm!
+	@#@echo installing manual page to ${DESTDIR}${MANPREFIX}/man1
+	@#@mkdir -p ${DESTDIR}${MANPREFIX}/man1
+	@#@sed "s/VERSION/${VERSION}/g" < s4k.1 > ${DESTDIR}${MANPREFIX}/man1/s4k.1
+	@#@chmod 644 ${DESTDIR}${MANPREFIX}/man1/s4k.1
+	@echo installing src files to ${DESTDIR}${PREFIX}/share/s4k
+	@mkdir -p ${DESTDIR}${PREFIX}/share/s4k/src
+	@cp -f s4k.c notify.c notify.h config.def.h config.sprinkles.h config.mk formats_*.h Makefile   ${DESTDIR}${PREFIX}/share/s4k/src
 
 uninstall:
-	rm ${DESTDIR}${PREFIX}/bin/s4k
+	@echo removing executable file from ${DESTDIR}${PREFIX}/bin
+	@rm ${DESTDIR}${PREFIX}/bin/s4k
+	@rm ${DESTDIR}${PREFIX}/bin/s4km
+	@echo removing manual page from ${DESTDIR}${MANPREFIX}/man1
+	@rm -f ${DESTDIR}${MANPREFIX}/man1/s4k.1
+	@echo removing src files from ${DESTDIR}${MANPREFIX}/share
+	@rm -Rf ${DESTDIR}${PREFIX}/share/s4k
