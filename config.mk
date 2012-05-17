@@ -2,9 +2,9 @@
 VERSION = 20.1
 
 # output formater
-FORMATER = "-DFORMAT_METHOD=\"formats_dwm.h\""
+#FORMATER = "-DFORMAT_METHOD=\"formats_dwm.h\""
 #FORMATER = "-DFORMAT_METHOD=\"formats_dwm_colorbar.h\""
-#FORMATER = "-DFORMAT_METHOD=\"formats_dwm_sprinkles.h\""
+FORMATER = "-DFORMAT_METHOD=\"formats_dwm_sprinkles.h\""
 #FORMATER = "-DFORMAT_METHOD=\"formats_html.h\""
 
 # paths

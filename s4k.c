@@ -92,9 +92,9 @@
 
 
 /* enmus */
-enum { BatCharged, BatCharging, BatDischarging };
+enum { BatCharged, BatCharging, BatDischarging, BatUnknown };
 
-enum { DATETIME, CPU, MEM, CLOCK, THERM, NET, WIFI, BATTERY,
+enum { DATETIME, CPU, MEM, CLOCK, THERM, NET, WIFI, BATTERY, BRIGHTNESS,
 #ifdef USE_SOCKETS
 	CMUS,
 	MPD,
@@ -155,11 +155,18 @@ typedef struct wstat { // wifi
 
 typedef struct bstat { // battery
 	int state;
-	int rate;
-	int remaining;
-	int capacity;
+	unsigned int rate;
+	unsigned int remaining;
+	unsigned int capacity;
 	char *name;
 } bstat;
+
+typedef struct brstat { // brightness
+	int num_brght;
+	unsigned int *brghts;
+	unsigned int *max_brghts;
+	char **devnames;
+} brstat;
 
 #ifdef USE_SOCKETS
 typedef struct mpstat { // music player
@@ -204,6 +211,8 @@ static char get_net(char *status);
 static char get_wifi(char *status);
 static char get_battery(char *status);
 static void check_batteries();
+static char get_brightness(char *status);
+static void check_brightness();
 #ifdef USE_SOCKETS
 static char get_cmus(char *status);
 static void check_cmus();
@@ -228,6 +237,7 @@ static nwstat net_stat;
 static wstat wifi_stat;
 bstat *battery_stats;
 int num_batteries;
+static brstat brightness_stat;
 #ifdef USE_SOCKETS
 static mpstat cmus_stat;
 static mpstat mpd_stat;
@@ -256,6 +266,7 @@ static const status_f statusfuncs[] = {
 	get_net,
 	get_wifi,
 	get_battery,
+    get_brightness,
 #ifdef USE_SOCKETS
 	get_cmus,
 	get_mpd,
@@ -498,8 +509,9 @@ char get_battery(char *status) {
 
 		while(!feof(fp)) {
 			if(fscanf(fp, "%[^=]=%[^\n]\n", label, value)!=2) {
-				fclose(fp);
-				return 0;
+				//fclose(fp);
+				//return 0;
+				continue;
 			}
 
 			if(strncmp(label, "POWER_SUPPLY_STATUS", 19)==0) {
@@ -509,6 +521,8 @@ char get_battery(char *status) {
 					battery_stats[i].state = BatDischarging;
 				else if(strncmp(value, "Charged", 7)==0)
 					battery_stats[i].state = BatCharged;
+				else
+					battery_stats[i].state = BatUnknown;
 			}
 			else if(strncmp(label, "POWER_SUPPLY_POWER_NOW", 23)==0) {
 				battery_stats[i].rate = atoi(value);
@@ -572,6 +586,75 @@ void check_batteries() {
 		}
 	}
 	num_batteries++;
+}
+
+char get_brightness(char *status) {
+	int i, val;
+	static char b[10];
+	static char filename[BUF_SIZE];
+	FILE *fp;
+
+	if(brightness_stat.num_brght==0)
+		return 0;
+
+	for(i=0; i<brightness_stat.num_brght; i++) {
+		sprintf(filename, "/sys/class/backlight/%s/actual_brightness", brightness_stat.devnames[i]);
+
+		fp = fopen(filename, "r");
+		if(fp==NULL)
+			return 0;
+
+        fgets(b, 10, fp);
+
+        if((val=atoi(b))<0) continue;
+        brightness_stat.brghts[i] = val;
+		fclose(fp);
+	}
+
+	brightness_format(status);
+
+	return 1;
+}
+
+void check_brightness() {
+	FILE *fp;
+	char b[10];
+	char filename[BUF_SIZE];
+	struct dirent **brightdirs;
+	int i, ii, val, len, len2;
+
+	int nentries = scandir("/sys/class/backlight/", &brightdirs, NULL, alphasort);
+	if(nentries<=2) return;
+
+    brightness_stat.brghts = calloc(sizeof(int), nentries - 2); // at least 2 directory entries are '.' and '..'
+    brightness_stat.max_brghts = calloc(sizeof(int), nentries - 2); // at least 2 directory entries are '.' and '..'
+    brightness_stat.devnames = calloc(sizeof(char*), nentries - 2); // at least 2 directory entries are '.' and '..'
+    brightness_stat.num_brght = 0;
+
+	for(i=0; i<nentries; i++) {
+		if(strlen(brightdirs[i]->d_name)>=3) {
+            *filename = 0;
+            for(ii=0; ii<LENGTH(brightness_names); ii++) {
+                len = strlen(brightness_names[ii]);
+                len2 = strlen(brightdirs[i]->d_name);
+                if(len2>=len && strncmp(brightness_names[ii], brightdirs[i]->d_name, len)==0) {
+                    sprintf(filename, "/sys/class/backlight/%s/max_brightness", brightdirs[i]->d_name);
+                    break;
+                }
+            }
+
+            if(*filename==0) continue;
+            fp = fopen(filename, "r");
+			if(fp==NULL) continue;
+            fgets(b, 10, fp);
+            if((val=atoi(b))<1) continue;
+            brightness_stat.max_brghts[brightness_stat.num_brght] = val;
+            brightness_stat.devnames[brightness_stat.num_brght] = calloc(sizeof(char), len);
+            strncpy(brightness_stat.devnames[brightness_stat.num_brght++], brightdirs[i]->d_name, len2);
+
+			fclose(fp);
+		}
+	}
 }
 
 #ifdef USE_SOCKETS
@@ -880,6 +963,7 @@ int main(int argc, char **argv) {
 	check_batteries();
 	check_clocks();
 	check_therms();
+    check_brightness();
 /*#ifdef USE_SOCKETS
 	check_cmus();
 	check_mpd();
