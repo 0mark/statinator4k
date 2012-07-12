@@ -634,10 +634,10 @@ void check_brightness() {
 	for(i=0; i<nentries; i++) {
 		if(strlen(brightdirs[i]->d_name)>=3) {
             *filename = 0;
-            for(ii=0; ii<LENGTH(brightness_names); ii++) {
-                len = strlen(brightness_names[ii]);
+            for(ii=0; ii<LENGTH(brightnes_names); ii++) {
+                len = strlen(brightnes_names[ii]);
                 len2 = strlen(brightdirs[i]->d_name);
-                if(len2>=len && strncmp(brightness_names[ii], brightdirs[i]->d_name, len)==0) {
+                if(len2>=len && strncmp(brightnes_names[ii], brightdirs[i]->d_name, len)==0) {
                     sprintf(filename, "/sys/class/backlight/%s/max_brightness", brightdirs[i]->d_name);
                     break;
                 }
