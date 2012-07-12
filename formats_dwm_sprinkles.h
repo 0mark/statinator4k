@@ -13,23 +13,24 @@ int h2i(char c) {
 void hexfade(char *ca, char *cb, double val, char r[4]) {
   char a[4];
   double s;
-  int max = 0, i, x, amax = 0;
+  int amax = 0, bmax = 0, xmax = 0, i, x;
 
   val = val < 0 ? 0 : (val > 1 ? 1 : val);
 
   for(i = 0; i < 3; i++) {
     x = h2i(ca[i]);
-    if(x>max) max = x;
+    if(x>amax) amax = x;
     x = h2i(cb[i]);
-    if(x>max) max = x;
+    if(x>bmax) bmax = x;
   }
 
   for(i = 0; i < 3; i++) {
     a[i] = h2i(ca[i]) * val + h2i(cb[i]) * (1 - val);
-    if(a[i]>amax) amax = a[i];
+    if(a[i]>xmax) xmax = a[i];
   }
 
-  s = (double)max / (double)amax;
+  s = ((double)amax * val + (double)bmax * (1 - val)) / (double)xmax;
+
   for(i = 0; i < 3; i++) {
     x = a[i] * s;
     r[i] = x>9 ? 'a' + x - 10 : '0' + x;
@@ -114,6 +115,23 @@ static inline void therm_format(char *status) {
 	aprintf(status, "%s", delimiter);
 }
 
+static inline void calc_traf_sym(int traf, char *status, char *sym, char *col, char *col2) {
+    static char hv[4];
+
+    hexfade(col, col2, (double)traf/((double)500*(double)1024), hv);
+
+    if(traf>1024*1024) {
+        traf /= 1024*1024;
+        aprintf(status, "^[f%s;%s%dM", hv, sym, traf);
+    } else if(traf>1024) {
+        traf /= 1024;
+        aprintf(status, "^[f%s;%s%dK", hv, sym, traf);
+    } else if(traf>20) {
+        aprintf(status, "^[f%s;%s%d", hv, sym, traf);
+    }
+    aprintf(status, "^[f444;%s", sym);
+}
+
 static inline void net_format(char *status) {
 	/*int i;
 	if(net_stat.count>0) {
@@ -154,7 +172,9 @@ static inline void net_format(char *status) {
 		if(pdev>=0) {
 			dtx = net_stat.tx[pdev]-net_stat.ltx[pdev];
 			drx = net_stat.rx[pdev]-net_stat.lrx[pdev];
-			aprintf(status, "^[f%s;^[i38;^[f%s;^[i35;", dtx<100 ? "444" : "845", drx<100 ? "444" : "584");
+			//aprintf(status, "^[f%s;^[i38;^[f%s;^[i35;", dtx<100 ? "444" : "845", drx<100 ? "444" : "584");
+			calc_traf_sym(dtx, status, "^[i38;", "f45", "645");
+			calc_traf_sym(drx, status, "^[i35;", "5f4", "564");
 			aprintf(status, "^[f555;^[i%d;^[f0;", dsym);
 		} else
 			aprintf(status, "^[f555;^[i33;^[f;");
