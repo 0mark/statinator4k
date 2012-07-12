@@ -4,7 +4,7 @@ static int refresh_wait        = 1;         // time between refresh in seconds
 static int max_status_length   = 512;       // max length of status
 static int auto_delimiter      = 1;         // automagically add delimiter on success
 static char delimiter[]        = " | ";     // delimiter
-static char brightnes_names[] = { "acpi" };
+static char *brightnes_names[] = { "acpi" };
 #ifdef USE_NOTIFY
 static int marquee_chars       = 30;        // TODO: description!
 static int marquee_offset      = 3;         // TODO: description!
