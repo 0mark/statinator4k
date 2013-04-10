@@ -11,62 +11,66 @@ int h2i(char c) {
 }
 
 void hexfade(char *ca, char *cb, double val, char r[4]) {
-  char a[4];
-  double s;
-  int amax = 0, bmax = 0, xmax = 0, i, x;
+	char a[4];
+	double s;
+	int amax = 0, bmax = 0, xmax = 0, i, x;
 
-  val = val < 0 ? 0 : (val > 1 ? 1 : val);
+	val = val < 0 ? 0 : (val > 1 ? 1 : val);
 
-  for(i = 0; i < 3; i++) {
-    x = h2i(ca[i]);
-    if(x>amax) amax = x;
-    x = h2i(cb[i]);
-    if(x>bmax) bmax = x;
-  }
+	for(i = 0; i < 3; i++) {
+		x = h2i(ca[i]);
+		if(x>amax) amax = x;
+		x = h2i(cb[i]);
+		if(x>bmax) bmax = x;
+	}
 
-  for(i = 0; i < 3; i++) {
-    a[i] = h2i(ca[i]) * val + h2i(cb[i]) * (1 - val);
-    if(a[i]>xmax) xmax = a[i];
-  }
+	for(i = 0; i < 3; i++) {
+		a[i] = h2i(ca[i]) * val + h2i(cb[i]) * (1 - val);
+		if(a[i]>xmax) xmax = a[i];
+	}
 
-  s = ((double)amax * val + (double)bmax * (1 - val)) / (double)xmax;
+	s = ((double)amax * val + (double)bmax * (1 - val)) / (double)xmax;
 
-  for(i = 0; i < 3; i++) {
-    x = a[i] * s;
-    r[i] = x>9 ? 'a' + x - 10 : '0' + x;
-  }
-  r[3] = 0;
+	for(i = 0; i < 3; i++) {
+		x = a[i] * s;
+		r[i] = x>9 ? 'a' + x - 10 : '0' + x;
+	}
+	r[3] = 0;
 
-  return;
+	return;
 }
 
 
 /* +++ FORMAT FUNCTIONS +++ */
 static inline void datetime_format(char *status) {
-	strftime(status + strlen(status), max_status_length - strlen(status), "^[f777;%d.%b %H:%M^[f;", localtime(&datetime_stat.time));
+	const struct tm* lt;
+	lt = localtime(&datetime_stat.time);
+	strftime(status + strlen(status), max_status_length - strlen(status), "^[f777;%d.%b %H:%M^[f;", lt);
 }
 
 static inline void cpu_format(char *status) {
-	static unsigned int o_running=0, o_total=0;
     static char hv[4];
-	unsigned int running = cpu_stat.user + cpu_stat.nice + cpu_stat.system, total = running + cpu_stat.idle;
-	unsigned int perc = (total - o_total) ? ((running - o_running) * 100) / (total - o_total) : 0;
+	unsigned int perc;
+	int i, p;
 
-	if(perc>100) perc=100;
+	aprintf(status, " ");
 
-    hexfade("f34", "3f4", perc / 100.0, hv);
+	for(i=0; i<cpu_stat.num_cpus; i++) {
+		perc = cpu_stat.perc[i];
 
-	//int col = perc * 11 / 100;
-	int p = perc / 10;
-	// ^[i15;	: Show pixmap CPU Symbol
-	// ^[f%x%x0;	: Set foreground color (fading from green to red)
-	// ^[f;		: Set default color
-	// ^[d;		: Show delimiter
-	//aprintf(status, " ^[f%x%x0;^[v%d;^[f; ", col, 12-col, p>9 ? 9 : p);
-	aprintf(status, " ^[f%s;^[v%d;^[f; ", hv, p>9 ? 9 : p);
+		if(perc>100) perc=100;
 
-	o_running = running;
-	o_total = total;
+	    hexfade("f34", "3f4", perc / 100.0, hv);
+
+		p = perc / 10;
+		// ^[i15;	 : Show pixmap CPU Symbol
+		// ^[f%x%x0; : Set foreground color (fading from green to red)
+		// ^[f;		 : Set default color
+		// ^[d;		 : Show delimiter
+		aprintf(status, "^[f%s;^[v%d;^[f;", hv, p>9 ? 9 : p);
+	}
+
+	aprintf(status, " ");
 }
 
 static inline void mem_format(char *status) {
@@ -82,12 +86,10 @@ static inline void mem_format(char *status) {
 
 static inline void clock_format(char *status) {
 	int i, perc;
-	// TODO: get max and min freqs from sys!
 
 	for(i=0; i<clock_stat.num_clocks; i++) {
-		perc = clock_stat.clocks[i] - 800000;
-		perc = perc ? (perc * 100) / 530000 : 0;
-		//col = perc * 10 / 100;
+		perc = clock_stat.clocks[i] - clock_stat.clock_min;
+		perc = perc ? (perc * 100) / (clock_stat.clock_max - clock_stat.clock_min) : 0;
 		if(i<clock_stat.num_clocks-1)
 			aprintf(status, "^[fea0;^[G15,%d;", perc / 10);
 		else
@@ -96,7 +98,7 @@ static inline void clock_format(char *status) {
 }
 
 static inline void therm_format(char *status) {
-	int i, perc;//, col;
+	int i, perc;
     static char hv[4];
 	// TODO: get WARNING temp from sys!
 
@@ -251,9 +253,7 @@ static inline void cmus_format(char *status) {
 			aprintf(status, "^[d1;^[f26c;^[h%d;^[d1;%s%s^[d1;^[f845;^[g51,%d;", p, mp_stat->repeat ? "^[f999;r" : "^[f555;1", mp_stat->shuffle ? "^[f999;s" : "^[f555; ", v);
 		}
 		aprintf(status, "^[f0;%s", delimiter);
-	} //else
-		//aprintf(status, " ");
-		//aprintf(status, "^[f555;^[i54;^[f;%s", delimiter);
+	}
 }
 #endif
 
@@ -274,8 +274,6 @@ static inline void notify_format(char *status) {
 	char fmt[message_length+30];
 	int offset;
 	int remaining = (notify_stat.message->started_at + notify_stat.message->expires_after) - time(NULL);
-	//if(remaining>9) remaining = 9;
-	//aprintf(status, "(%d, %d) ", remaining, notify_stat.message->expires_after);
 	if(remaining>0)
 		aprintf(status, " ^[fc82;^[g21,%d;^[f; ", remaining);
 

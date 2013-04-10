@@ -115,10 +115,14 @@ typedef struct dstat { // datetime
 } dstat;
 
 typedef struct cstat { // cpu
-	unsigned int user;
-	unsigned int nice;
-	unsigned int system;
-	unsigned int idle;
+	int num_cpus;
+	unsigned int *user;
+	unsigned int *nice;
+	unsigned int *system;
+	unsigned int *idle;
+	unsigned int *running;
+	unsigned int *total;
+	unsigned int *perc;
 } cstat;
 
 typedef struct mstat { // memory
@@ -130,6 +134,8 @@ typedef struct mstat { // memory
 
 typedef struct lstat { // clock
 	int num_clocks;
+	unsigned int clock_min;
+	unsigned int clock_max;
 	unsigned int *clocks;
 } lstat;
 
@@ -202,6 +208,7 @@ typedef char (*status_f)(char *);
 /* function declarations */
 static char get_datetime(char *status);
 static char get_cpu(char *status);
+static void check_cpu();
 static char get_mem(char *status);
 static char get_clock(char *status);
 static void check_clocks();
@@ -289,15 +296,51 @@ char get_datetime(char *status) {
 	return 1;
 }
 
-char get_cpu(char *status) {
-	// TODO: multiple CPUs!
+void check_cpu() {
 	FILE *fp = fopen("/proc/stat", "r");
+	unsigned int x;
+
+	if(fp==NULL)
+		return;
+
+	while(!feof(fp)) {
+		if(fscanf(fp, "cpu%*[0-9] %u %u %u %u", &x, &x, &x, &x) == 4) {
+			cpu_stat.num_cpus++;
+		}
+		while(!feof(fp) && fgetc(fp)!='\n');
+	}
+
+	cpu_stat.user = calloc(sizeof(unsigned int), cpu_stat.num_cpus);
+	cpu_stat.nice = calloc(sizeof(unsigned int), cpu_stat.num_cpus);
+	cpu_stat.system = calloc(sizeof(unsigned int), cpu_stat.num_cpus);
+	cpu_stat.idle = calloc(sizeof(unsigned int), cpu_stat.num_cpus);
+	cpu_stat.running = calloc(sizeof(unsigned int), cpu_stat.num_cpus);
+	cpu_stat.total = calloc(sizeof(unsigned int), cpu_stat.num_cpus);
+	cpu_stat.perc = calloc(sizeof(unsigned int), cpu_stat.num_cpus);
+
+	fclose(fp);
+}
+
+char get_cpu(char *status) {
+	FILE *fp = fopen("/proc/stat", "r");
+	unsigned int running, total;
+	int i;
+
 	if(fp==NULL)
 		return 0;
 
-	if(fscanf(fp, "cpu %u %u %u %u", &cpu_stat.user, &cpu_stat.nice, &cpu_stat.system, &cpu_stat.idle) != 4) {
-		fclose(fp);
-		return 0;
+	// skip first line
+	while(!feof(fp) && fgetc(fp)!='\n');
+
+	for(i=0; i<cpu_stat.num_cpus; i++) {
+		if(fscanf(fp, "cpu%*[0-9] %u %u %u %u", &cpu_stat.user[i], &cpu_stat.nice[i], &cpu_stat.system[i], &cpu_stat.idle[i]) == 4) {
+			running = cpu_stat.user[i] + cpu_stat.nice[i] + cpu_stat.system[i];
+			total = running + cpu_stat.idle[i];
+			cpu_stat.perc[i] = (total - cpu_stat.total[i]) ? ((running - cpu_stat.running[i]) * 100) / (total - cpu_stat.total[i]) : 0;
+			cpu_stat.running[i] = running;
+			cpu_stat.total[i] = total;
+		}
+		while(!feof(fp) && fgetc(fp)!='\n');
 	}
 	fclose(fp);
 
@@ -338,22 +381,30 @@ char get_mem(char *status) {
 	return 1;
 }
 
-char get_clock(char *status) {
+int read_clock(int num, char type[3], unsigned int *target) {
 	static char filename[BUF_SIZE];
-	int i;
 	FILE *fp;
 
-	for(i=0; i<clock_stat.num_clocks; i++) {
-		snprintf(filename, BUF_SIZE, "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq", i);
-		fp = fopen(filename, "r");
-		if(fp==NULL)
-			return 0;
+	snprintf(filename, BUF_SIZE, "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_%s_freq", num, type);
+	fp = fopen(filename, "r");
+	if(fp==NULL)
+		return 0;
 
-		if(fscanf(fp, "%u", &clock_stat.clocks[i]) != 1) {
-			fclose(fp);
-			return 0;
-		}
+	if(fscanf(fp, "%u", target) != 1) {
 		fclose(fp);
+		return 0;
+	}
+
+	fclose(fp);
+	return 1;
+}
+
+char get_clock(char *status) {
+	int i;
+
+	for(i=0; i<clock_stat.num_clocks; i++) {
+		if(read_clock(i, "cur", &clock_stat.clocks[i])==0)
+			return 0;
 	}
 
 	clock_format(status);
@@ -372,8 +423,13 @@ void check_clocks() {
 
 	for(i=0; i<nentries; i++) {
 		len = strlen(clockdirs[i]->d_name);
-		if(len>=4 && strncmp("cpu", clockdirs[i]->d_name, 3)==0 && clockdirs[i]->d_name[3]>='0' && clockdirs[i]->d_name[3]<='9')
+		if(len>=4 && strncmp("cpu", clockdirs[i]->d_name, 3)==0 && clockdirs[i]->d_name[3]>='0' && clockdirs[i]->d_name[3]<='9') {			
+			if(clock_stat.num_clocks==0) {
+				if(read_clock(clock_stat.num_clocks, "min", &clock_stat.clock_min)==0 || read_clock(clock_stat.num_clocks, "max", &clock_stat.clock_max)==0)
+					return;
+			}
 			clock_stat.num_clocks++;
+		}
 	}
 	clock_stat.clocks = calloc(sizeof(unsigned int), clock_stat.num_clocks);
 }
@@ -552,6 +608,7 @@ void check_batteries() {
 	int nentries = scandir("/sys/class/power_supply/", &batdirs, NULL, alphasort);
 	num_batteries = -1;
 	if(nentries<=2) {
+		free(batdirs);
 		return;
 	}
 
@@ -572,8 +629,8 @@ void check_batteries() {
 				if(strncmp(label, "POWER_SUPPLY_PRESENT", 20)==0) {
 					if(strncmp(value, "0", 1)==0) break;  // not present battery is not interesting
 					else {                                // (might be wrong, when battery is added)
-						num_batteries++;              // but this loop looks a bit suspect anyway...
-						battery_stats[num_batteries].name = calloc(sizeof(char), strlen(batdirs[i]->d_name));
+						num_batteries++;              	  // but this loop looks a bit fishy anyway...
+						battery_stats[num_batteries].name = calloc(sizeof(char), strlen(batdirs[i]->d_name) + 1);
 						strcpy(battery_stats[num_batteries].name, batdirs[i]->d_name);
 					}
 				}
@@ -585,6 +642,7 @@ void check_batteries() {
 			fclose(fp);
 		}
 	}
+	free(batdirs);
 	num_batteries++;
 }
 
@@ -960,6 +1018,7 @@ int main(int argc, char **argv) {
 	root = DefaultRootWindow(dpy);
 #endif
 
+	check_cpu();
 	check_batteries();
 	check_clocks();
 	check_therms();
