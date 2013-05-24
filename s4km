@@ -1,11 +1,12 @@
 #!/bin/sh
 
-cfgfile="$XDG_CONFIG_HOME/s4k/config.h"
-cfmfile="$XDG_CONFIG_HOME/s4k/config.mk"
-frmfile="$XDG_CONFIG_HOME/s4k/formats_*.h"
+cfgfile="${XDG_CONFIG_HOME:-$HOME/.config}/s4k/config.h"
+cfmfile="${XDG_CONFIG_HOME:-$HOME/.config}/s4k/config.mk"
+frmfile="${XDG_CONFIG_HOME:-$HOME/.config}/s4k/formats_*.h"
+
 if [ -f $cfgfile ]; then
-	s4kbin="$XDG_DATA_HOME/s4k/s4k"
-	if [ $cfgfile -nt $s4kbin ]; then
+	s4kbin="${XDG_DATA_HOME:-$HOME/.local/share}/s4k/s4k"
+	if [ $cfgfile -nt $s4kbin -o ! -f $s4kbin ]; then
 		makedir="/tmp/s4k$$"
 		mkdir $makedir
 		cp -R "S4KSRC"* $makedir
@@ -16,10 +17,9 @@ if [ -f $cfgfile ]; then
 		make
 		R=$?
 		if [ $R -gt 0 ] && [ $R -le 127 ]; then
-			notify-send 'starts4kd' 'error compiling new s4k'
+			s4kbinb=`which s4k`
 		else
-			notify-send 'starts4kd' 'succesfully compiled new s4k'
-			mkdir -p "$XDG_DATA_HOME/s4k"
+			mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}/s4k"
 			cp s4k $s4kbin
 		fi
 		rm -Rf $makedir
