@@ -1005,7 +1005,7 @@ char get_messages(char *status) {
 
 
 int main(int argc, char **argv) {
-	char stext[max_status_length];
+	char stext[max_status_length], ostext[max_status_length];
 	int mc =0, i = 0;
 #ifdef USE_X11
 	Display *dpy;
@@ -1059,12 +1059,15 @@ int main(int argc, char **argv) {
 						if(auto_delimiter) aprintf(stext, "%s", delimiter);
 				}
 
+           if(strcmp(stext, ostext)!=0) {
 #ifdef USE_X11
-			XChangeProperty(dpy, root, XA_WM_NAME, XA_STRING, 8, PropModeReplace, (unsigned char*)stext, strlen(stext));
-			XFlush(dpy);
+				XChangeProperty(dpy, root, XA_WM_NAME, XA_STRING, 8, PropModeReplace, (unsigned char*)stext, strlen(stext));
+				XFlush(dpy);
 #else
-			printf("%s\n", stext);
+				printf("%s\n", stext);
 #endif
+            }
+                        strcpy(ostext, stext);
 			sleep(refresh_wait);
 		}
 
