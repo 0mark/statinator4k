@@ -81,10 +81,11 @@
 
 
 /* macros */
-#define aprintf(STR, ...)   snprintf(STR+strlen(STR), max_status_length-strlen(STR), __VA_ARGS__)
-#define LENGTH(X)           (sizeof X / sizeof X[0])
-#define MAX(A, B)           ((A) > (B) ? (A) : (B))
-#define MIN(A, B)           ((A) < (B) ? (A) : (B))
+#define aprintf(STR, ...)            snprintf(STR+strlen(STR), max_status_length-strlen(STR), __VA_ARGS__)
+#define LENGTH(X)                    (sizeof X / sizeof X[0])
+#define MAX(A, B)                    ((A) > (B) ? (A) : (B))
+#define MIN(A, B)                    ((A) < (B) ? (A) : (B))
+#define XALLOC(target, type, size)   if((target = calloc(sizeof(type), size)) == NULL) die("fatal: could not malloc() %u bytes (target)\n", size*sizeof(type))
 
 
 /* statics */
@@ -232,6 +233,7 @@ static char get_alsavol(char *status);
 #ifdef USE_NOTIFY
 static char get_messages(char *status);
 #endif
+static void die(const char *errstr, ...);
 
 
 /* variables */
@@ -298,11 +300,11 @@ char get_datetime(char *status) {
 
 void check_cpu() {
 	FILE *fp = fopen("/proc/stat", "r");
-	unsigned int x;
 
 	if(fp==NULL)
 		return;
 
+	unsigned int x;
 	while(!feof(fp)) {
 		if(fscanf(fp, "cpu%*[0-9] %u %u %u %u", &x, &x, &x, &x) == 4) {
 			cpu_stat.num_cpus++;
@@ -310,24 +312,25 @@ void check_cpu() {
 		while(!feof(fp) && fgetc(fp)!='\n');
 	}
 
-	cpu_stat.user = calloc(sizeof(unsigned int), cpu_stat.num_cpus);
-	cpu_stat.nice = calloc(sizeof(unsigned int), cpu_stat.num_cpus);
-	cpu_stat.system = calloc(sizeof(unsigned int), cpu_stat.num_cpus);
-	cpu_stat.idle = calloc(sizeof(unsigned int), cpu_stat.num_cpus);
-	cpu_stat.running = calloc(sizeof(unsigned int), cpu_stat.num_cpus);
-	cpu_stat.total = calloc(sizeof(unsigned int), cpu_stat.num_cpus);
-	cpu_stat.perc = calloc(sizeof(unsigned int), cpu_stat.num_cpus);
+	XALLOC(cpu_stat.user, unsigned int, cpu_stat.num_cpus);
+	XALLOC(cpu_stat.nice, unsigned int, cpu_stat.num_cpus);
+	XALLOC(cpu_stat.system, unsigned int, cpu_stat.num_cpus);
+	XALLOC(cpu_stat.idle, unsigned int, cpu_stat.num_cpus);
+	XALLOC(cpu_stat.running, unsigned int, cpu_stat.num_cpus);
+	XALLOC(cpu_stat.total, unsigned int, cpu_stat.num_cpus);
+	XALLOC(cpu_stat.perc, unsigned int, cpu_stat.num_cpus);
 
 	fclose(fp);
 }
 
 char get_cpu(char *status) {
 	FILE *fp = fopen("/proc/stat", "r");
-	unsigned int running, total;
-	int i;
 
 	if(fp==NULL)
 		return 0;
+
+	unsigned int running, total;
+	int i;
 
 	// skip first line
 	while(!feof(fp) && fgetc(fp)!='\n');
@@ -350,13 +353,15 @@ char get_cpu(char *status) {
 }
 
 char get_mem(char *status) {
-	static char label[16];
-	unsigned int value;
 	FILE *fp = fopen("/proc/meminfo", "r");
+
 	if(fp==NULL)
 		return 0;
 
-	while(!feof(fp)) {
+	static char label[16];
+	unsigned int value;
+
+	while(!feof(fp)) { //               v- possible buffer overflow? TODO
 		if(fscanf(fp, "%[^:]: %u kB\n", label, &value)!=2) {
 			fclose(fp);
 			return 0;
@@ -414,12 +419,17 @@ char get_clock(char *status) {
 
 void check_clocks() {
 	struct dirent **clockdirs;
-	int i, len;
+	int i, nentries = scandir("/sys/devices/system/cpu/", &clockdirs, NULL, alphasort);
 
-	clock_stat.num_clocks = 0;
-	int nentries = scandir("/sys/devices/system/cpu/", &clockdirs, NULL, alphasort);
-	if(nentries<=2)
+	if(nentries<=2) {
+		for(i=0; i<nentries; i++)
+			free(clockdirs[i]);
+		free(clockdirs);
 		return;
+	}
+
+	int len;
+	clock_stat.num_clocks = 0;
 
 	for(i=0; i<nentries; i++) {
 		len = strlen(clockdirs[i]->d_name);
@@ -430,7 +440,9 @@ void check_clocks() {
 			}
 			clock_stat.num_clocks++;
 		}
+		free(clockdirs[i]);
 	}
+	free(clockdirs);
 	clock_stat.clocks = calloc(sizeof(unsigned int), clock_stat.num_clocks);
 }
 
@@ -459,29 +471,35 @@ char get_therm(char *status) {
 
 void check_therms() {
 	struct dirent **thermdirs;
-	int i;
+	int i, nentries = scandir("/sys/devices/virtual/thermal", &thermdirs, NULL, alphasort);
+
+	if(nentries<=2) {
+		for(i=0; i<nentries; i++)
+			free(thermdirs[i]);
+		free(thermdirs);
+		return;
+	}
 
 	therm_stat.num_therms = 0;
-	int nentries = scandir("/sys/devices/virtual/thermal", &thermdirs, NULL, alphasort);
-	if(nentries<=2)
-		return;
 
 	for(i=0; i<nentries; i++) {
 		if(strncmp("thermal_zone", thermdirs[i]->d_name, 12)==0 && thermdirs[i]->d_name[12]>='0' && thermdirs[i]->d_name[12]<='9')
 			therm_stat.num_therms++;
+		free(thermdirs[i]);
 	}
-	therm_stat.therms = calloc(sizeof(unsigned int), therm_stat.num_therms);
+	free(thermdirs);
+	XALLOC(therm_stat.therms, unsigned int, therm_stat.num_therms);
 }
 
 char get_net(char *status) {
-	unsigned int ch=0, ons = net_stat.count, i=0;
 	FILE *fp = fopen("/proc/net/dev", "r");
 
 	if(fp==NULL)
 		return 0;
 
-	net_stat.count = 0;
+	unsigned int ch=0, ons = net_stat.count, i;
 
+	net_stat.count = 0;
 	while(!feof(fp)) {
 		while((ch=fgetc(fp)) != '\n' && ch!=EOF);
 		net_stat.count++;
@@ -490,11 +508,20 @@ char get_net(char *status) {
 
 	if(net_stat.count>0) {
 		if(ons!=net_stat.count) {
-			net_stat.devnames = calloc(sizeof(char*), net_stat.count);
-			net_stat.tx = calloc(sizeof(unsigned int), net_stat.count);
-			net_stat.rx = calloc(sizeof(unsigned int), net_stat.count);
-			net_stat.ltx = calloc(sizeof(unsigned int), net_stat.count);
-			net_stat.lrx = calloc(sizeof(unsigned int), net_stat.count);
+			if(ons > 0) {
+				for(i=0; i<net_stat.count; i++) {
+					free(net_stat.devnames[i]);
+				}
+				free(net_stat.tx);
+				free(net_stat.rx);
+				free(net_stat.ltx);
+				free(net_stat.lrx);
+			}
+			XALLOC(net_stat.devnames, char*, net_stat.count);
+			XALLOC(net_stat.tx, unsigned int, net_stat.count);
+			XALLOC(net_stat.rx, unsigned int, net_stat.count);
+			XALLOC(net_stat.ltx, unsigned int, net_stat.count);
+			XALLOC(net_stat.lrx, unsigned int, net_stat.count);
 		}
 
 		rewind(fp);
@@ -506,7 +533,7 @@ char get_net(char *status) {
 		while(!feof(fp) && i<net_stat.count) {
 			net_stat.ltx[i] = net_stat.tx[i];
 			net_stat.lrx[i] = net_stat.rx[i];
-			if(ons!=net_stat.count && net_stat.count) net_stat.devnames[i] = calloc(sizeof(char), 20);
+			if(ons!=net_stat.count && net_stat.count) XALLOC(net_stat.devnames[i], char, 20);
 			if(fscanf(fp, " %[^:]: %u %*u %*u %*u %*u %*u %*u %*u %u %*u %*u %*u %*u %*u %*u %*u\n", net_stat.devnames[i], &net_stat.rx[i], &net_stat.tx[i]) != 3) {
 				fclose(fp);
 				return 0;
@@ -525,17 +552,17 @@ char get_net(char *status) {
 	return 1;
 }
 
-
 char get_wifi(char *status) {
-	unsigned int ch = 0;
 	FILE *fp = fopen("/proc/net/wireless", "r");
 
 	if(fp==NULL)
 		return 0;
 
+	unsigned int ch = 0;
+
 	while((ch=fgetc(fp)) != '\n' && ch!=EOF);  // skip 2 header lines
 	while((ch=fgetc(fp)) != '\n' && ch!=EOF);
-
+                               // might provoke a buffer overflow? TODO
 	if(fscanf(fp, "%s %u %u", wifi_stat.devname, &wifi_stat.wstatus, &wifi_stat.perc) != 3) {
 		fclose(fp);
 		return 0;
@@ -599,18 +626,21 @@ char get_battery(char *status) {
 }
 
 void check_batteries() {
-	FILE *fp;
-	char label[32], value[64];
-	char filename[BUF_SIZE];
+	// TODO: the battery count might change on run time?
 	struct dirent **batdirs;
-	int i;
+	int i, nentries = scandir("/sys/class/power_supply/", &batdirs, NULL, alphasort);
 
-	int nentries = scandir("/sys/class/power_supply/", &batdirs, NULL, alphasort);
-	num_batteries = -1;
 	if(nentries<=2) {
+		for(i=0; i<nentries; i++)
+			free(batdirs[i]);
 		free(batdirs);
 		return;
 	}
+
+	FILE *fp;
+	char label[32], value[64];
+	char filename[BUF_SIZE];
+	num_batteries = -1;
 
 	battery_stats = calloc(sizeof(bstat), nentries - 2); // at least 2 directory entries are '.' and '..'
 
@@ -618,9 +648,9 @@ void check_batteries() {
 		if(strlen(batdirs[i]->d_name)>=3 && strncmp("BAT", batdirs[i]->d_name, 3)==0) {
 			sprintf(filename, "/sys/class/power_supply/%s/uevent", batdirs[i]->d_name);
 			fp = fopen(filename, "r");
-			if(fp==NULL) {
+
+			if(fp==NULL)
 				continue;
-			}
 
 			while(fp && !feof(fp)) {
 				if(fscanf(fp, "%[^=]=%[^\n]\n", label, value) != 2)
@@ -630,7 +660,7 @@ void check_batteries() {
 					if(strncmp(value, "0", 1)==0) break;  // not present battery is not interesting
 					else {                                // (might be wrong, when battery is added)
 						num_batteries++;              	  // but this loop looks a bit fishy anyway...
-						battery_stats[num_batteries].name = calloc(sizeof(char), strlen(batdirs[i]->d_name) + 1);
+						XALLOC(battery_stats[num_batteries].name, char, strlen(batdirs[i]->d_name) + 1);
 						strcpy(battery_stats[num_batteries].name, batdirs[i]->d_name);
 					}
 				}
@@ -641,6 +671,7 @@ void check_batteries() {
 			}
 			fclose(fp);
 		}
+		free(batdirs[i]);
 	}
 	free(batdirs);
 	num_batteries++;
@@ -1003,6 +1034,14 @@ char get_messages(char *status) {
 }
 #endif
 
+void die(const char *errstr, ...) {
+	va_list ap;
+
+	va_start(ap, errstr);
+	vfprintf(stderr, errstr, ap);
+	va_end(ap);
+	exit(EXIT_FAILURE);
+}
 
 int main(int argc, char **argv) {
 	char stext[max_status_length], ostext[max_status_length];
