@@ -53,7 +53,7 @@ static inline void cpu_format(char *status) {
 	unsigned int perc;
 	int i, p;
 
-	aprintf(status, " ");
+	//aprintf(status, " ");
 
 	for(i=0; i<cpu_stat.num_cpus; i++) {
 		perc = cpu_stat.perc[i];
@@ -135,18 +135,6 @@ static inline void calc_traf_sym(int traf, char *status, char *sym, char *col, c
 }
 
 static inline void net_format(char *status) {
-	/*int i;
-	if(net_stat.count>0) {
-		for(i=0; i<net_stat.count; i++)
-			if(strncmp(net_stat.devnames[i], "lo", 2) && net_stat.rx[i]) {
-				aprintf(status, "^[f%s;^[i38;^[f%s;^[i35;", (net_stat.tx[i]-net_stat.ltx[i])>100 ? "444" : "845", (net_stat.rx[i]-net_stat.lrx[i])>100 ? "444" : "584");
-				if(i<net_stat.count-1)
-					aprintf(status, "^[f555;%s^[f0; ", net_stat.devnames[i]);
-				else
-					aprintf(status, "^[f555;%s^[f0;", net_stat.devnames[i]);
-			}
-	} else
-		aprintf(status, "^[f555;^[i33;^[f;");*/
 	int i, pdev=-1, drx, dtx, dsym = 28;
 	if(net_stat.count>0) {
 		for(i=0; i<net_stat.count; i++) {
@@ -197,6 +185,7 @@ static inline void battery_format(char *status) {
 	int totalremaining = 0;
 	int cstate = 1, dstate=0, rate = 0;
     static char hv[4];
+    static int last[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, pos=0, mean=0;
 
 	for(i=0; i<num_batteries; i++) {
 		if(battery_stats[i].state==BatUnknown) {
@@ -206,6 +195,16 @@ static inline void battery_format(char *status) {
 		if(battery_stats[i].state==BatDischarging) dstate = 1;
 		if(battery_stats[i].state==BatCharging) dstate = -1;
 		if(battery_stats[i].rate) rate = battery_stats[i].rate;
+	}
+	last[pos++] = rate;
+	if(pos>=10) {
+		for(int i=0; i<10; i++) {
+			mean += last[i];
+		}
+		mean = mean / 10;
+		pos = 0;
+	} else if(mean==0) {
+		mean = rate;
 	}
 
 	if(cstate) {
@@ -220,9 +219,10 @@ static inline void battery_format(char *status) {
 			} else if(battery_stats[i].state==BatDischarging || (dstate==1 && (battery_stats[i].state==BatCharged || battery_stats[i].state==BatUnknown))) {
                 hexfade("3f4", "f34", perc / 100.0, hv);
 				aprintf(status, "^[f%s;^[g9,%d;^[f;", hv, perc / 10);
-				totalremaining += battery_stats[i].rate ? (battery_stats[i].remaining * 60) / battery_stats[i].rate : (rate ? (battery_stats[i].remaining * 60) / rate : 0);
+				totalremaining += (mean ? (battery_stats[i].remaining * 60) / mean : 0);
 			}
 		}
+
 		if(totalremaining>=0)
 			aprintf(status, " ^[f444;[^[fe84;%d:%02d^[f;]^[f0;", totalremaining / 60, totalremaining % 60);
 	}
@@ -235,22 +235,21 @@ static inline void brightness_format(char *status) {
 
     for(i=0; i<brightness_stat.num_brght; i++) {
         hexfade("3f4", "f34", 1.0 * brightness_stat.brghts[i] / brightness_stat.max_brghts[i], hv);
-        //printf("%s\n", hv);
         aprintf(status, "^[f%s;^[i56;^[f;%s", hv, delimiter);
     }
 }
 
 #ifdef USE_SOCKETS
-static inline void cmus_format(char *status) {
+static inline void mp_format(char *status) {
 	int p, v;
-	if(mp_stat->status>0) {
-		aprintf(status, " ^[feb2;%s^[f26c;-^[fe60;%s", mp_stat->artist, mp_stat->title);
-		if(mp_stat->status==1) {
-			p = mp_stat->duration ? (mp_stat->position * 10) / mp_stat->duration : 0;
-			v = mp_stat->volume * 10 / 100;
+	if(mp_stat.status>0) {
+		aprintf(status, " ^[feb2;%s^[f26c;-^[fe60;%s", mp_stat.artist, mp_stat.title);
+		if(mp_stat.status==1) {
+			p = mp_stat.duration ? (mp_stat.position * 10) / mp_stat.duration : 0;
+			v = mp_stat.volume * 10 / 100;
 			if(p>9) p = 9;
 			if(v>9) v = 9;
-			aprintf(status, "^[d1;^[f26c;^[h%d;^[d1;%s%s^[d1;^[f845;^[g51,%d;", p, mp_stat->repeat ? "^[f999;r" : "^[f555;1", mp_stat->shuffle ? "^[f999;s" : "^[f555; ", v);
+			aprintf(status, "^[d1;^[f26c;^[h%d;^[d1;%s%s^[d1;^[f845;^[g51,%d;", p, mp_stat.repeat ? "^[f999;r" : "^[f555;1", mp_stat.shuffle ? "^[f999;s" : "^[f555; ", v);
 		}
 		aprintf(status, "^[f0;%s", delimiter);
 	}

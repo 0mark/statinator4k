@@ -56,6 +56,7 @@
 
 // when defined bevore Xlibs are loaded, alsa fails
 #define __USE_BSD // needed to get scandir and alphasort
+#define _BSD_SOURCE
 #include <dirent.h>
 
 #ifdef USE_SOCKETS
@@ -97,8 +98,9 @@ enum { BatCharged, BatCharging, BatDischarging, BatUnknown };
 
 enum { DATETIME, CPU, MEM, CLOCK, THERM, NET, WIFI, BATTERY, BRIGHTNESS,
 #ifdef USE_SOCKETS
-	CMUS,
-	MPD,
+	// CMUS,
+	// MPD,
+	MP,
 #endif
 #ifdef USE_ALSAVOL
 	AVOL,
@@ -176,6 +178,15 @@ typedef struct brstat { // brightness
 } brstat;
 
 #ifdef USE_SOCKETS
+typedef struct con {
+	struct hostent* host;
+    struct sockaddr_in sain;
+    struct sockaddr_un saun;
+    int sock;
+    int connected;
+    int domain;
+    FILE* fp;
+} con;
 typedef struct mpstat { // music player
 	int status;
 	int duration;
@@ -186,6 +197,8 @@ typedef struct mpstat { // music player
 	char artist[128];
 	char album[128];
 	char title[128];
+	con con;
+	void (*parse_func)();
 } mpstat;
 #endif
 
@@ -205,7 +218,6 @@ typedef struct nstat { // notifications
 
 typedef char (*status_f)(char *);
 
-
 /* function declarations */
 static char get_datetime(char *status);
 static char get_cpu(char *status);
@@ -222,10 +234,14 @@ static void check_batteries();
 static char get_brightness(char *status);
 static void check_brightness();
 #ifdef USE_SOCKETS
-static char get_cmus(char *status);
-static void check_cmus();
-static char get_mpd(char *status);
-static void check_mpd();
+// static char get_cmus(char *status);
+// static void check_cmus();
+// static char get_mpd(char *status);
+// static void check_mpd();
+static void check_con(con *con);
+static void prepare_con(con *con);
+static char get_mp();
+static char mpd_parse();
 #endif
 #ifdef USE_ALSAVOL
 static char get_alsavol(char *status);
@@ -248,11 +264,12 @@ bstat *battery_stats;
 int num_batteries;
 static brstat brightness_stat;
 #ifdef USE_SOCKETS
-static mpstat cmus_stat;
-static mpstat mpd_stat;
-static mpstat *mp_stat; // pointer is set in getter, so one formater for all music getter
-int cmus_sock;
-int mpd_sock;
+//static mpstat cmus_stat;
+//static mpstat mpd_stat;
+//static mpstat *mp_stat; // pointer is set in getter, so one formater for all music getter
+static mpstat mp_stat;
+//int cmus_sock;
+//int mpd_sock;
 #ifndef USE_ALSAVOL
 FILE *cmus_fp;
 FILE *mpd_fp;
@@ -277,8 +294,9 @@ static const status_f statusfuncs[] = {
 	get_battery,
     get_brightness,
 #ifdef USE_SOCKETS
-	get_cmus,
-	get_mpd,
+	// get_cmus,
+	// get_mpd,
+	get_mp,
 #endif
 #ifdef USE_ALSAVOL
 	get_alsavol,
@@ -342,6 +360,7 @@ char get_cpu(char *status) {
 			cpu_stat.perc[i] = (total - cpu_stat.total[i]) ? ((running - cpu_stat.running[i]) * 100) / (total - cpu_stat.total[i]) : 0;
 			cpu_stat.running[i] = running;
 			cpu_stat.total[i] = total;
+			//printf("%d, %d, %d -- %d, %d, %d, %d\n", running, total, cpu_stat.perc[i], cpu_stat.user[i], cpu_stat.nice[i], cpu_stat.system[i], cpu_stat.idle[i]); 
 		}
 		while(!feof(fp) && fgetc(fp)!='\n');
 	}
@@ -746,143 +765,275 @@ void check_brightness() {
 	}
 }
 
-#ifdef USE_SOCKETS
-// TODO: consolidate: socket opener, line getter
-char get_cmus(char*status) {
-    static const char cmd[] = "status\n";
-	static char type[128], value[128], tag[128], value2[128];
-	int tvol = 0;
-#ifdef USE_ALSAVOL
-#define SOCKBUFZIZE 1024
-	int n, bufp = 0;
-	static char buf[SOCKBUFZIZE];
-#endif
+// #ifdef USE_SOCKETS
+// // TODO: consolidate: socket opener, line getter
+// char get_cmus(char*status) {
+//     static const char cmd[] = "status\n";
+// 	static char type[128], value[128], tag[128], value2[128];
+// 	int tvol = 0;
+// #ifdef USE_ALSAVOL
+// #define SOCKBUFZIZE 1024
+// 	int n, bufp = 0;
+// 	static char buf[SOCKBUFZIZE];
+// #endif
 
-	if(cmus_connect!=1) {
-		check_cmus();
+// 	if(cmus_connect!=1) {
+// 		check_cmus();
+// 		return 0;
+// 	}
+
+//     if(send(cmus_sock, cmd, strlen(cmd), MSG_NOSIGNAL)<0) {
+// 		close(cmus_sock);
+// 		return 0;
+// 	}
+
+// #ifdef USE_ALSAVOL
+// 	n = read(cmus_sock, buf, SOCKBUFZIZE);
+// 	buf[n] = 0;
+
+// 	while(bufp<n) {
+// 		if(sscanf(buf+bufp, "%s %[^\n]\n", type, value) != 2) {
+// 			break;
+// 		}
+// 		bufp+=strlen(type) + strlen(value) + 2;
+// #else
+// 	while(cmus_fp && !feof(cmus_fp)) {
+// 		if(fscanf(cmus_fp, "%s %[^\n]\n", type, value) != 2)
+// 			break;
+// #endif
+
+// 		if(strncmp(type, "status", 6)==0) {
+// 			if(strncmp(value, "playing", 7)==0)
+// 				cmus_stat.status = 1;
+// 			else if(strncmp(value, "stopped", 7)==0)
+// 				cmus_stat.status = 2;
+// 			else
+// 				cmus_stat.status = 0;
+// 		} else if(strncmp(type, "duration", 8)==0) {
+// 			cmus_stat.duration = atoi(value);
+// 		} else if(strncmp(type, "position", 8)==0) {
+// 			cmus_stat.position = atoi(value);
+// 		} else if(strncmp(type, "tag", 3)==0) {
+// 			if(sscanf(value, "%s %[^\n]\n", tag, value2) == 2) {
+// 				if(strncmp(tag, "artist", 6)==0) {
+// 					strncpy(cmus_stat.artist, value2, 128);
+// 				} else if(strncmp(tag, "album", 5)==0) {
+// 					strncpy(cmus_stat.album, value2, 128);
+// 				} else if(strncmp(tag, "title", 5)==0) {
+// 					strncpy(cmus_stat.title, value2, 128);
+// 				}
+// 			}
+// 		} else if(strncmp(type, "set", 3)==0) {
+// 			if(sscanf(value, "%s %[^\n]\n", tag, value2) == 2) {
+// 				if(strncmp(tag, "repeat", 6)==0) {
+// 					if(strncmp(value2, "true", 4)==0)
+// 						cmus_stat.repeat = 1;
+// 					else
+// 						cmus_stat.repeat = 0;
+// 				} else if(strncmp(tag, "shuffle", 7)==0) {
+// 					if(strncmp(value2, "true", 4)==0)
+// 						cmus_stat.shuffle = 1;
+// 					else
+// 						cmus_stat.shuffle = 0;
+// 				} else if(strncmp(tag, "vol_", 4)==0) {
+// 					tvol += atoi(value2);
+// 				}
+// 			}
+// 		}
+// 	}
+// 	if(tvol) cmus_stat.volume = tvol / 2;
+
+// 	mp_stat = &cmus_stat;
+// 	cmus_format(status);
+
+// 	return 1;
+// }
+
+// void check_cmus() {
+//     int len, flags;
+//     struct sockaddr_un saun;
+
+//     if((cmus_sock = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
+//         cmus_connect = 0;
+//         return;
+//     }
+
+// 	flags = fcntl(cmus_sock, F_GETFL, 0);
+// 	fcntl(cmus_sock, F_SETFL, flags | O_NONBLOCK);
+
+//     saun.sun_family = AF_UNIX;
+//     strcpy(saun.sun_path, cmus_adress);
+
+//     len = sizeof(saun.sun_family) + strlen(saun.sun_path);
+
+//     if(connect(cmus_sock, (struct sockaddr *)&saun, len) < 0) {
+//         close(cmus_sock);
+// 		cmus_connect = 0;
+//         return;
+//     }
+
+//     cmus_connect = 1;
+
+// #ifndef USE_ALSAVOL
+// 	cmus_fp = fdopen(cmus_sock, "r");
+// #endif
+// 	cmus_stat.volume = 0;
+// }
+
+// char get_mpd(char*status) {
+//     static const char cmd[] = "status\ncurrentsong\n";
+// 	static char type[128], value[128];
+// 	char *dp;
+// #ifdef USE_ALSAVOL
+// #define SOCKBUFZIZE 1024
+// 	int n, bufp = 0;
+// 	static char buf[SOCKBUFZIZE];
+// #endif
+
+// 	if(mpd_connect!=1) {
+// 		check_mpd();
+// 		return 0;
+// 	}
+
+//     if(send(mpd_sock, cmd, strlen(cmd), MSG_NOSIGNAL)<0) {
+// 		close(mpd_sock);
+// 		return 0;
+// 	}
+
+// #ifdef USE_ALSAVOL
+// 	n = read(mpd_sock, buf, SOCKBUFZIZE);
+// 	buf[n] = 0;
+
+// 	while(bufp<n) {
+// 		if(sscanf(buf+bufp, "%[^:]: %[^\n]\n", type, value) != 2) {
+// 			bufp+=strlen(type) + strlen(value) + 3;
+// 			continue;
+// 		}
+// 		bufp+=strlen(type) + strlen(value) + 3;
+// #else
+// 	while(mpd_fp && !feof(mpd_fp)) {
+// 		if(fscanf(mpd_fp, "%[^:]: %[^\n]\n", type, value) != 2)
+// 			continue;
+// #endif
+
+// 		if(strncmp(type, "state", 5)==0) {
+// 			if(strncmp(value, "play", 4)==0)
+// 				mpd_stat.status = 1;
+// 			else if(strncmp(value, "stop", 4)==0)
+// 				mpd_stat.status = 2;
+// 			else
+// 				mpd_stat.status = 0;
+// 		} else if(strncmp(type, "time", 4)==0) {
+// 			mpd_stat.position = atoi(value);
+// 			dp = strstr(value, ":");
+// 			dp++;
+// 			mpd_stat.duration = atoi(dp);
+// 		} else if(strncmp(type, "Artist", 6)==0) {
+// 			strncpy(mpd_stat.artist, value, 128);
+// 		} else if(strncmp(type, "Album", 5)==0) {
+// 			strncpy(mpd_stat.album, value, 128);
+// 		} else if(strncmp(type, "Title", 5)==0) {
+// 			strncpy(mpd_stat.title, value, 128);
+// 		} else if(strncmp(type, "repeat", 6)==0) {
+// 			if(strncmp(value, "1", 1)==0)
+// 				mpd_stat.repeat = 1;
+// 			else
+// 				mpd_stat.repeat = 0;
+// 		} else if(strncmp(type, "random", 6)==0) {
+// 			if(strncmp(value, "1", 1)==0)
+// 				mpd_stat.shuffle = 1;
+// 			else
+// 				mpd_stat.shuffle = 0;
+// 		} else if(strncmp(type, "volume", 6)==0) {
+// 			mpd_stat.volume = atoi(value);
+// 		}
+// 	}
+// 	mp_stat = &mpd_stat;
+// 	cmus_format(status);
+
+// 	return 1;
+// }
+
+void prepare_con(con *con) {
+	struct hostent *host;
+
+    if(mp_port) { // unix sockets dont have a port
+    	con->saun.sun_family = AF_UNIX;
+    	strcpy(con->saun.sun_path, mp_adress);
+    	con->domain = AF_UNIX;
+    } else { // internet sockets do have a port
+		con->host = gethostbyname(mp_adress);
+		con->sain.sin_family = AF_INET;
+		con->sain.sin_port = htons(mp_port);
+		con->sain.sin_addr = *((struct in_addr *)host->h_addr);
+		memset(&(con->sain.sin_zero), 0, 8);
+		con->domain = AF_INET;
+	}
+}
+
+void check_con(con *con) {
+    int flags, stat;
+
+    if((con->sock = socket(con->domain, SOCK_STREAM, 0)) < 0) {
+        printf("sock fail\n");
+		con->connected = 0;
+        return;
+    }
+
+    if(con->domain == AF_INET)
+    	stat = connect(con->sock, (struct sockaddr *)&con->sain, sizeof(struct sockaddr));
+    else
+    	stat = connect(con->sock, (struct sockaddr *)&con->saun, sizeof(con->saun.sun_family) + strlen(con->saun.sun_path));
+    if(stat < 0) {
+		perror("sock");
+        printf("con fail\n");
+        close(con->sock);
+		con->connected = 0;
+        return;
+    }
+
+	flags = fcntl(con->sock, F_GETFL, 0);
+	fcntl(con->sock, F_SETFL, flags | O_NONBLOCK);
+
+    con->connected = 1;
+
+	#ifndef USE_ALSAVOL
+	con->fp = fdopen(con->sock, "r");
+	#endif
+}
+
+char get_mp() {
+	if(mp_stat.con.connected!=1) {
+		check_con(&mp_stat.con);
 		return 0;
 	}
 
-    if(send(cmus_sock, cmd, strlen(cmd), MSG_NOSIGNAL)<0) {
-		close(cmus_sock);
-		return 0;
+	if(mp_stat.con.connected==1) {
+		//mp_stat.parse_func();
+		mp_parse();
 	}
-
-#ifdef USE_ALSAVOL
-	n = read(cmus_sock, buf, SOCKBUFZIZE);
-	buf[n] = 0;
-
-	while(bufp<n) {
-		if(sscanf(buf+bufp, "%s %[^\n]\n", type, value) != 2) {
-			break;
-		}
-		bufp+=strlen(type) + strlen(value) + 2;
-#else
-	while(cmus_fp && !feof(cmus_fp)) {
-		if(fscanf(cmus_fp, "%s %[^\n]\n", type, value) != 2)
-			break;
-#endif
-
-		if(strncmp(type, "status", 6)==0) {
-			if(strncmp(value, "playing", 7)==0)
-				cmus_stat.status = 1;
-			else if(strncmp(value, "stopped", 7)==0)
-				cmus_stat.status = 2;
-			else
-				cmus_stat.status = 0;
-		} else if(strncmp(type, "duration", 8)==0) {
-			cmus_stat.duration = atoi(value);
-		} else if(strncmp(type, "position", 8)==0) {
-			cmus_stat.position = atoi(value);
-		} else if(strncmp(type, "tag", 3)==0) {
-			if(sscanf(value, "%s %[^\n]\n", tag, value2) == 2) {
-				if(strncmp(tag, "artist", 6)==0) {
-					strncpy(cmus_stat.artist, value2, 128);
-				} else if(strncmp(tag, "album", 5)==0) {
-					strncpy(cmus_stat.album, value2, 128);
-				} else if(strncmp(tag, "title", 5)==0) {
-					strncpy(cmus_stat.title, value2, 128);
-				}
-			}
-		} else if(strncmp(type, "set", 3)==0) {
-			if(sscanf(value, "%s %[^\n]\n", tag, value2) == 2) {
-				if(strncmp(tag, "repeat", 6)==0) {
-					if(strncmp(value2, "true", 4)==0)
-						cmus_stat.repeat = 1;
-					else
-						cmus_stat.repeat = 0;
-				} else if(strncmp(tag, "shuffle", 7)==0) {
-					if(strncmp(value2, "true", 4)==0)
-						cmus_stat.shuffle = 1;
-					else
-						cmus_stat.shuffle = 0;
-				} else if(strncmp(tag, "vol_", 4)==0) {
-					tvol += atoi(value2);
-				}
-			}
-		}
-	}
-	if(tvol) cmus_stat.volume = tvol / 2;
-
-	mp_stat = &cmus_stat;
-	cmus_format(status);
 
 	return 1;
 }
 
-void check_cmus() {
-    int len, flags;
-    struct sockaddr_un saun;
-
-    if((cmus_sock = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
-        cmus_connect = 0;
-        return;
-    }
-
-	flags = fcntl(cmus_sock, F_GETFL, 0);
-	fcntl(cmus_sock, F_SETFL, flags | O_NONBLOCK);
-
-    saun.sun_family = AF_UNIX;
-    strcpy(saun.sun_path, cmus_adress);
-
-    len = sizeof(saun.sun_family) + strlen(saun.sun_path);
-
-    if(connect(cmus_sock, (struct sockaddr *)&saun, len) < 0) {
-        close(cmus_sock);
-		cmus_connect = 0;
-        return;
-    }
-
-    cmus_connect = 1;
-
-#ifndef USE_ALSAVOL
-	cmus_fp = fdopen(cmus_sock, "r");
-#endif
-	cmus_stat.volume = 0;
-}
-
-char get_mpd(char*status) {
+char mpd_parse() {
     static const char cmd[] = "status\ncurrentsong\n";
 	static char type[128], value[128];
 	char *dp;
-#ifdef USE_ALSAVOL
-#define SOCKBUFZIZE 1024
+
+	#ifdef USE_ALSAVOL
+	#define SOCKBUFZIZE 1024
 	int n, bufp = 0;
 	static char buf[SOCKBUFZIZE];
-#endif
+	#endif
 
-	if(mpd_connect!=1) {
-		check_mpd();
+    if(send(mp_stat.con.sock, cmd, strlen(cmd), MSG_NOSIGNAL)<0) {
+		close(mp_stat.con.sock);
 		return 0;
 	}
 
-    if(send(mpd_sock, cmd, strlen(cmd), MSG_NOSIGNAL)<0) {
-		close(mpd_sock);
-		return 0;
-	}
-
-#ifdef USE_ALSAVOL
-	n = read(mpd_sock, buf, SOCKBUFZIZE);
+	#ifdef USE_ALSAVOL
+	n = read(mp_stat.con.sock, buf, SOCKBUFZIZE);
 	buf[n] = 0;
 
 	while(bufp<n) {
@@ -891,87 +1042,95 @@ char get_mpd(char*status) {
 			continue;
 		}
 		bufp+=strlen(type) + strlen(value) + 3;
-#else
+	#else
 	while(mpd_fp && !feof(mpd_fp)) {
 		if(fscanf(mpd_fp, "%[^:]: %[^\n]\n", type, value) != 2)
 			continue;
-#endif
+	#endif
 
 		if(strncmp(type, "state", 5)==0) {
 			if(strncmp(value, "play", 4)==0)
-				mpd_stat.status = 1;
+				mp_stat.status = 1;
 			else if(strncmp(value, "stop", 4)==0)
-				mpd_stat.status = 2;
+				mp_stat.status = 2;
 			else
-				mpd_stat.status = 0;
+				mp_stat.status = 0;
 		} else if(strncmp(type, "time", 4)==0) {
-			mpd_stat.position = atoi(value);
+			mp_stat.position = atoi(value);
 			dp = strstr(value, ":");
 			dp++;
-			mpd_stat.duration = atoi(dp);
+			mp_stat.duration = atoi(dp);
 		} else if(strncmp(type, "Artist", 6)==0) {
-			strncpy(mpd_stat.artist, value, 128);
+			strncpy(mp_stat.artist, value, 128);
 		} else if(strncmp(type, "Album", 5)==0) {
-			strncpy(mpd_stat.album, value, 128);
+			strncpy(mp_stat.album, value, 128);
 		} else if(strncmp(type, "Title", 5)==0) {
-			strncpy(mpd_stat.title, value, 128);
+			strncpy(mp_stat.title, value, 128);
 		} else if(strncmp(type, "repeat", 6)==0) {
 			if(strncmp(value, "1", 1)==0)
-				mpd_stat.repeat = 1;
+				mp_stat.repeat = 1;
 			else
-				mpd_stat.repeat = 0;
+				mp_stat.repeat = 0;
 		} else if(strncmp(type, "random", 6)==0) {
 			if(strncmp(value, "1", 1)==0)
-				mpd_stat.shuffle = 1;
+				mp_stat.shuffle = 1;
 			else
-				mpd_stat.shuffle = 0;
+				mp_stat.shuffle = 0;
 		} else if(strncmp(type, "volume", 6)==0) {
-			mpd_stat.volume = atoi(value);
+			mp_stat.volume = atoi(value);
 		}
 	}
-	mp_stat = &mpd_stat;
-	cmus_format(status);
+	// mp_stat = &mpd_stat;
+	// cmus_format(status);
 
 	return 1;
 }
 
-void check_mpd() {
-    int flags;
-	struct hostent *host;
-    struct sockaddr_in sain;
-
-	host = gethostbyname(mpd_adress);
-
-    if((mpd_sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        printf("sock fail\n");
-		mpd_connect = 0;
-        return;
-    }
-
-	sain.sin_family = AF_INET;
-	sain.sin_port = htons(mpd_port);
-	sain.sin_addr = *((struct in_addr *)host->h_addr);
-	memset(&(sain.sin_zero), 0, 8);
-
-    if(connect(mpd_sock, (struct sockaddr *)&sain, sizeof(struct sockaddr)) < 0) {
-	perror("sock");
-        printf("con fail\n");
-        close(mpd_sock);
-		mpd_connect = 0;
-        return;
-    }
-
-	flags = fcntl(mpd_sock, F_GETFL, 0);
-	fcntl(mpd_sock, F_SETFL, flags | O_NONBLOCK);
-
-    mpd_connect = 1;
-
-#ifndef USE_ALSAVOL
-	mpd_fp = fdopen(mpd_sock, "r");
-#endif
-	mpd_stat.volume = 0;
+void check_mp() {
+	prepare_con(&mp_stat.con);
 }
-#endif
+
+// void get_mpd() {
+
+// }
+
+// void check_mpd() {
+//     int flags;
+// 	struct hostent *host;
+//     struct sockaddr_in sain;
+
+// 	host = gethostbyname(mpd_adress);
+
+//     if((mpd_sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+//         printf("sock fail\n");
+// 		mpd_connect = 0;
+//         return;
+//     }
+
+// 	sain.sin_family = AF_INET;
+// 	sain.sin_port = htons(mpd_port);
+// 	sain.sin_addr = *((struct in_addr *)host->h_addr);
+// 	memset(&(sain.sin_zero), 0, 8);
+
+//     if(connect(mpd_sock, (struct sockaddr *)&sain, sizeof(struct sockaddr)) < 0) {
+// 		perror("sock");
+//         printf("con fail\n");
+//         close(mpd_sock);
+// 		mpd_connect = 0;
+//         return;
+//     }
+
+// 	flags = fcntl(mpd_sock, F_GETFL, 0);
+// 	fcntl(mpd_sock, F_SETFL, flags | O_NONBLOCK);
+
+//     mpd_connect = 1;
+
+// #ifndef USE_ALSAVOL
+// 	mpd_fp = fdopen(mpd_sock, "r");
+// #endif
+// 	mpd_stat.volume = 0;
+// }
+// #endif
 
 #ifdef USE_ALSAVOL
 // Derived from: http://blog.yjl.im/2009/05/get-volumec.html
@@ -1062,10 +1221,11 @@ int main(int argc, char **argv) {
 	check_clocks();
 	check_therms();
     check_brightness();
-/*#ifdef USE_SOCKETS
-	check_cmus();
-	check_mpd();
-#endif*/
+#ifdef USE_SOCKETS
+	// check_cmus();
+	// check_mpd();
+	check_mp();
+#endif
 	net_stat.count = 0;
 
 #ifdef USE_NOTIFY
@@ -1110,9 +1270,9 @@ int main(int argc, char **argv) {
 			sleep(refresh_wait);
 		}
 
-#ifdef USE_SOCKETS
-	if(cmus_sock) close(cmus_sock);
-#endif
+// #ifdef USE_SOCKETS
+// 	if(cmus_sock) close(cmus_sock);
+// #endif
 
 	return 0;
 }
