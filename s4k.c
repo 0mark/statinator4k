@@ -148,11 +148,12 @@ typedef struct wstat { // wifi
 } wstat;
 
 typedef struct bstat { // battery
-	int state;
-	unsigned int rate;
-	unsigned int remaining;
-	unsigned int capacity;
-	char *name;
+	int num_bats;
+	int *state;
+	unsigned int *rate;
+	unsigned int *remaining;
+	unsigned int *capacity;
+	char **name;
 } bstat;
 
 typedef struct brstat { // brightness
@@ -239,8 +240,8 @@ static int read_clock(int num, char type[3], unsigned int *target);
 #ifdef USE_ALSAVOL
 static astat alsavol_stat;
 #endif
-int num_batteries;
-bstat *battery_stats;
+//int num_batteries;
+static bstat battery_stats;
 static brstat brightness_stat;
 static lstat clock_stat;
 static cstat cpu_stat;
@@ -296,9 +297,14 @@ void check_batteries() {
 	FILE *fp;
 	char label[32], value[64];
 	char filename[BUF_SIZE];
-	num_batteries = -1;
+	battery_stats.num_bats = -1;
 
-	battery_stats = calloc(sizeof(bstat), nentries - 2); // at least 2 directory entries are '.' and '..'
+	
+	XALLOC(battery_stats.state, int, nentries - 2);
+	XALLOC(battery_stats.rate, unsigned int, nentries - 2);
+	XALLOC(battery_stats.remaining, unsigned int, nentries - 2);
+	XALLOC(battery_stats.capacity, unsigned int, nentries - 2);
+	XALLOC(battery_stats.name, char*, nentries - 2);
 
 	for(i=0; i<nentries; i++) {
 		if(strlen(batdirs[i]->d_name)>=3 && strncmp("BAT", batdirs[i]->d_name, 3)==0) {
@@ -315,13 +321,13 @@ void check_batteries() {
 				if(strncmp(label, "POWER_SUPPLY_PRESENT", 20)==0) {
 					if(strncmp(value, "0", 1)==0) break;  // not present battery is not interesting
 					else {                                // (might be wrong, when battery is added)
-						num_batteries++;              	  // but this loop looks a bit fishy anyway...
-						XALLOC(battery_stats[num_batteries].name, char, strlen(batdirs[i]->d_name) + 1);
-						strcpy(battery_stats[num_batteries].name, batdirs[i]->d_name);
+						battery_stats.num_bats++;              	  // but this loop looks a bit fishy anyway...
+						XALLOC(battery_stats.name[battery_stats.num_bats], char, strlen(batdirs[i]->d_name) + 1);
+						strcpy(battery_stats.name[battery_stats.num_bats], batdirs[i]->d_name);
 					}
 				}
 				if(strncmp(label, "POWER_SUPPLY_ENERGY_FULL", 24)==0 && strlen(label)==24) {
-					battery_stats[num_batteries].capacity = atoi(value);
+					battery_stats.capacity[battery_stats.num_bats] = atoi(value);
 					break;
 				}
 			}
@@ -330,7 +336,7 @@ void check_batteries() {
 		free(batdirs[i]);
 	}
 	free(batdirs);
-	num_batteries++;
+	battery_stats.num_bats++;
 }
 
 void check_brightness() {
@@ -530,11 +536,11 @@ char get_battery(char *status) {
 	static char filename[BUF_SIZE];
 	FILE *fp;
 
-	if(num_batteries==0)
+	if(battery_stats.num_bats==0)
 		return 0;
 
-	for(i=0; i<num_batteries; i++) {
-		sprintf(filename, "/sys/class/power_supply/%s/uevent", battery_stats[i].name);
+	for(i=0; i<battery_stats.num_bats; i++) {
+		sprintf(filename, "/sys/class/power_supply/%s/uevent", battery_stats.name[i]);
 		fp = fopen(filename, "r");
 		if(fp==NULL)
 			return 0;
@@ -546,20 +552,20 @@ char get_battery(char *status) {
 
 			if(strncmp(label, "POWER_SUPPLY_STATUS", 19)==0) {
 				if(strncmp(value, "Charging", 8)==0)
-					battery_stats[i].state = BatCharging;
+					battery_stats.state[i] = BatCharging;
 				else if(strncmp(value, "Discharging", 11)==0)
-					battery_stats[i].state = BatDischarging;
+					battery_stats.state[i] = BatDischarging;
 				else if(strncmp(value, "Charged", 7)==0)
-					battery_stats[i].state = BatCharged;
+					battery_stats.state[i] = BatCharged;
 				else
-					battery_stats[i].state = BatUnknown;
+					battery_stats.state[i] = BatUnknown;
 			}
 			else if(strncmp(label, "POWER_SUPPLY_POWER_NOW", 23)==0) {
-				battery_stats[i].rate = atoi(value);
-				if(battery_stats[i].rate < 0) battery_stats[i].rate=1;
+				battery_stats.rate[i] = atoi(value);
+				if(battery_stats.rate[i] < 0) battery_stats.rate[i]=1;
 			}
 			else if(strncmp(label, "POWER_SUPPLY_ENERGY_NOW", 22)==0) {
-				battery_stats[i].remaining = atoi(value);
+				battery_stats.remaining[i] = atoi(value);
 			}
 
 		}

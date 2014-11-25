@@ -1,7 +1,3 @@
-- Handle calloc fails
-
-- Unify error messages
-
 - Add more data modules:
    lm_sensors (at least thermal)
 
@@ -11,12 +7,6 @@
     irssi, email, ...
   - maybe use smprintf from other project
 
-- Fix Problems resulting from alsavol
-
-- Try to swap proc for sys, at last when proc support is deprecated or soon to be deprecated
-
 - QUESTIONS:
  - is it a good idea to use static inline functions as formaters?
- - is it better to free everything thats currently not needed and allocate new when needed?
-   current: everythings static
  - is it better to keep file open instead of closing/opening repeatedly?

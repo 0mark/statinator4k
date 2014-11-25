@@ -187,14 +187,14 @@ static inline void battery_format(char *status) {
     static char hv[4];
     static int last[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, pos=0, mean=0;
 
-	for(i=0; i<num_batteries; i++) {
-		if(battery_stats[i].state==BatUnknown) {
-            if(!battery_stats[i].rate) battery_stats[i].state = BatCharged;
+	for(i=0; i<battery_stats.num_bats; i++) {
+		if(battery_stats.state[i]==BatUnknown) {
+            if(!battery_stats.rate) battery_stats.state[i] = BatCharged;
         }
-        if(battery_stats[i].state!=BatCharged) cstate = 0;
-		if(battery_stats[i].state==BatDischarging) dstate = 1;
-		if(battery_stats[i].state==BatCharging) dstate = -1;
-		if(battery_stats[i].rate) rate = battery_stats[i].rate;
+        if(battery_stats.state[i]!=BatCharged) cstate = 0;
+		if(battery_stats.state[i]==BatDischarging) dstate = 1;
+		if(battery_stats.state[i]==BatCharging) dstate = -1;
+		if(battery_stats.rate[i]) rate = battery_stats.rate[i];
 	}
 	last[pos++] = rate;
 	if(pos>=10) {
@@ -210,16 +210,16 @@ static inline void battery_format(char *status) {
 	if(cstate) {
 		aprintf(status, "^[f539;^[i0;^[f;");
 	} else {
-		for(i=0; i<num_batteries; i++) {
-			perc = battery_stats[i].capacity ? battery_stats[i].remaining / (battery_stats[i].capacity / 100) : 0;
-			if(battery_stats[i].state==BatCharging/* || (dstate==-1 && battery_stats[i].state==BatCharged)*/) {
+		for(i=0; i<battery_stats.num_bats; i++) {
+			perc = battery_stats.capacity[i] ? battery_stats.remaining[i] / (battery_stats.capacity[i] / 100) : 0;
+			if(battery_stats.state[i]==BatCharging/* || (dstate==-1 && battery_stats[i].state==BatCharged)*/) {
                 hexfade("3f4", "f34", perc / 100.0, hv);
                 aprintf(status, "^[f%s;^[g0,%d;^[f;", hv, perc / 10);
-				totalremaining += battery_stats[i].rate ? ((battery_stats[i].capacity-battery_stats[i].remaining) * 60) / battery_stats[i].rate : 0;
-			} else if(battery_stats[i].state==BatDischarging || (dstate==1 && (battery_stats[i].state==BatCharged || battery_stats[i].state==BatUnknown))) {
+				totalremaining += battery_stats.rate[i] ? ((battery_stats.capacity[i]-battery_stats.remaining[i]) * 60) / battery_stats.rate[i] : 0;
+			} else if(battery_stats.state[i]==BatDischarging || (dstate==1 && (battery_stats.state[i]==BatCharged || battery_stats.state[i]==BatUnknown))) {
                 hexfade("3f4", "f34", perc / 100.0, hv);
 				aprintf(status, "^[f%s;^[g9,%d;^[f;", hv, perc / 10);
-				totalremaining += (mean ? (battery_stats[i].remaining * 60) / mean : 0);
+				totalremaining += (mean ? (battery_stats.remaining[i] * 60) / mean : 0);
 			}
 		}
 
@@ -280,7 +280,7 @@ static inline void mp_format(char *status) {
 	if(mp_stat.status>0) {
 		//shrtn(mp_stat.artist);
 		//shrtn(mp_stat.title);
-		aprintf(status, " ^[feb2;%s^[f26c;-^[fe60;%s", mp_stat.artist, mp_stat.title);
+		aprintf(status, "^[feb2;%s^[f26c;-^[fe60;%s", mp_stat.artist, mp_stat.title);
 		if(mp_stat.status==1) {
 			if(mp_stat.duration>=0 && mp_stat.duration>=0) {
 				p = mp_stat.duration ? (mp_stat.position * 10) / mp_stat.duration : 0;
