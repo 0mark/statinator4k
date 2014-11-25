@@ -239,17 +239,60 @@ static inline void brightness_format(char *status) {
     }
 }
 
+static inline void shrtn(char *s) {
+	char *n = s;
+	s++;
+	n++;
+	while(*s) {
+		switch(*s) {
+			case 'a':
+			case 'e':
+			case 'i':
+			case 'o':
+			case 'u':
+				s++;
+				break;
+			case ' ':
+				s++;
+				while(*s && !((*s>'a' && *s<'z') || (*s>'A' && *s<'Z') || (*s>'0' && *s<'9'))) s++;
+				if(*s && *s>'a' && *s<'z') {
+					*n = *s + 'A'-'a';
+					s++;
+					n++;
+				}
+				break;
+			default:
+				if((*s>'a' && *s<'z') || (*s>'A' && *s<'Z') || (*s>'0' && *s<'9')) {
+					*n = *s;
+					s++;
+					n++;
+				} else {
+					s++;
+				}
+		}
+	}
+	*n = '\0';
+}
+
 #ifdef USE_SOCKETS
 static inline void mp_format(char *status) {
 	int p, v;
 	if(mp_stat.status>0) {
+		//shrtn(mp_stat.artist);
+		//shrtn(mp_stat.title);
 		aprintf(status, " ^[feb2;%s^[f26c;-^[fe60;%s", mp_stat.artist, mp_stat.title);
 		if(mp_stat.status==1) {
-			p = mp_stat.duration ? (mp_stat.position * 10) / mp_stat.duration : 0;
-			v = mp_stat.volume * 10 / 100;
-			if(p>9) p = 9;
-			if(v>9) v = 9;
-			aprintf(status, "^[d1;^[f26c;^[h%d;^[d1;%s%s^[d1;^[f845;^[g51,%d;", p, mp_stat.repeat ? "^[f999;r" : "^[f555;1", mp_stat.shuffle ? "^[f999;s" : "^[f555; ", v);
+			if(mp_stat.duration>=0 && mp_stat.duration>=0) {
+				p = mp_stat.duration ? (mp_stat.position * 10) / mp_stat.duration : 0;
+				aprintf(status, "^[d1;^[f26c;^[h%d;", p);
+			}
+			aprintf(status, "^[d1;%s%s", mp_stat.repeat ? "^[f999;r" : "^[f555;1", mp_stat.shuffle ? "^[f999;s" : "^[f555; ");
+			if(mp_stat.volume>=0) {
+				v = mp_stat.volume * 10 / 100;
+				if(p>9) p = 9;
+				if(v>9) v = 9;
+				aprintf(status, "^[d1;^[f845;^[g51,%d;", v);
+			}
 		}
 		aprintf(status, "^[f0;%s", delimiter);
 	}

@@ -37,12 +37,8 @@
  * If a sensor needs some initialisation, it should be made in main. A formater has to
  * be made at least for dwm, and copyed in every other formater.
  */
-
-// Nasty hack, because alsalib does not compile with #define _POSIX_C_SOURCE 1,
-// but fdopen is not available without. TODO: fix it!
-#ifndef USE_ALSAVOL
 #define _POSIX_C_SOURCE 1 // needed for fdopen
-#endif
+
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,21 +50,12 @@
 #include <X11/Xlib.h>
 #endif
 
-// when defined bevore Xlibs are loaded, alsa fails
-#define __USE_BSD // needed to get scandir and alphasort
-#define _BSD_SOURCE
 #include <dirent.h>
 
 #ifdef USE_SOCKETS
-//#include <sys/socket.h>
-//#include <sys/types.h>
 #include <sys/un.h>
-//#include <netinet/in.h>
 #include <fcntl.h>
-#define __USE_GNU // needed because h_addr of struct hostent is deprecated, but i do not know what its replaced by
 #include <netdb.h>
-//#include <string.h>
-//#include <errno.h>
 #endif
 
 #ifdef USE_ALSAVOL
@@ -96,10 +83,9 @@
 /* enmus */
 enum { BatCharged, BatCharging, BatDischarging, BatUnknown };
 
-enum { DATETIME, CPU, MEM, CLOCK, THERM, NET, WIFI, BATTERY, BRIGHTNESS,
+enum {
+	DATETIME, CPU, MEM, CLOCK, THERM, NET, WIFI, BATTERY, BRIGHTNESS,
 #ifdef USE_SOCKETS
-	// CMUS,
-	// MPD,
 	MP,
 #endif
 #ifdef USE_ALSAVOL
@@ -112,7 +98,6 @@ enum { DATETIME, CPU, MEM, CLOCK, THERM, NET, WIFI, BATTERY, BRIGHTNESS,
 
 
 /* structs */
-//TODO: propper names for the structs
 typedef struct dstat { // datetime
 	time_t time;
 } dstat;
@@ -219,70 +204,58 @@ typedef struct nstat { // notifications
 typedef char (*status_f)(char *);
 
 /* function declarations */
-static char get_datetime(char *status);
-static char get_cpu(char *status);
-static void check_cpu();
-static char get_mem(char *status);
-static char get_clock(char *status);
-static void check_clocks();
-static char get_therm(char *status);
-static void check_therms();
-static char get_net(char *status);
-static char get_wifi(char *status);
-static char get_battery(char *status);
-static void check_batteries();
-static char get_brightness(char *status);
-static void check_brightness();
-#ifdef USE_SOCKETS
-// static char get_cmus(char *status);
-// static void check_cmus();
-// static char get_mpd(char *status);
-// static void check_mpd();
-static void check_con(con *con);
-static void prepare_con(con *con);
-static char get_mp();
-static char mpd_parse();
-#endif
 #ifdef USE_ALSAVOL
 static char get_alsavol(char *status);
 #endif
+static void check_batteries();
+static char get_battery(char *status);
+static void check_brightness();
+static char get_brightness(char *status);
+static void check_clocks();
+static char get_clock(char *status);
+static void check_cpus();
+static char get_cpu(char *status);
+static char get_datetime(char *status);
+static char get_mem(char *status);
 #ifdef USE_NOTIFY
 static char get_messages(char *status);
 #endif
+#ifdef USE_SOCKETS
+static void check_mp();
+static char get_mp();
+static void check_con(con *con);
+static char mp_parse_mpd();
+static char mp_parse_madasul();
+#endif
+static char get_net(char *status);
+static void check_therms();
+static char get_therm(char *status);
+static char get_wifi(char *status);
 static void die(const char *errstr, ...);
+static int read_clock(int num, char type[3], unsigned int *target);
 
 
 /* variables */
-static dstat datetime_stat;
-static cstat cpu_stat;
-static mstat mem_stat;
-static lstat clock_stat;
-static tstat therm_stat;
-static nwstat net_stat;
-static wstat wifi_stat;
-bstat *battery_stats;
-int num_batteries;
-static brstat brightness_stat;
-#ifdef USE_SOCKETS
-//static mpstat cmus_stat;
-//static mpstat mpd_stat;
-//static mpstat *mp_stat; // pointer is set in getter, so one formater for all music getter
-static mpstat mp_stat;
-//int cmus_sock;
-//int mpd_sock;
-#ifndef USE_ALSAVOL
-FILE *cmus_fp;
-FILE *mpd_fp;
-#endif
-int cmus_connect = 0;
-int mpd_connect = 0;
-#endif
 #ifdef USE_ALSAVOL
 static astat alsavol_stat;
 #endif
+int num_batteries;
+bstat *battery_stats;
+static brstat brightness_stat;
+static lstat clock_stat;
+static cstat cpu_stat;
+static dstat datetime_stat;
+static mstat mem_stat;
 #ifdef USE_NOTIFY
 static nstat notify_stat;
 #endif
+#ifdef USE_SOCKETS
+static mpstat mp_stat;
+#endif
+static nwstat net_stat;
+static tstat therm_stat;
+static wstat wifi_stat;
+
 static const status_f statusfuncs[] = {
 	get_datetime,
 	get_cpu,
@@ -294,8 +267,6 @@ static const status_f statusfuncs[] = {
 	get_battery,
     get_brightness,
 #ifdef USE_SOCKETS
-	// get_cmus,
-	// get_mpd,
 	get_mp,
 #endif
 #ifdef USE_ALSAVOL
@@ -310,19 +281,115 @@ static const status_f statusfuncs[] = {
 #include "config.h"
 
 
-char get_datetime(char *status) {
-	datetime_stat.time = time(NULL);
-	datetime_format(status);
-	return 1;
+void check_batteries() {
+	// TODO: the battery count might change on run time?
+	struct dirent **batdirs;
+	int i, nentries = scandir("/sys/class/power_supply/", &batdirs, NULL, alphasort);
+
+	if(nentries<=2) {
+		for(i=0; i<nentries; i++)
+			free(batdirs[i]);
+		free(batdirs);
+		return;
+	}
+
+	FILE *fp;
+	char label[32], value[64];
+	char filename[BUF_SIZE];
+	num_batteries = -1;
+
+	battery_stats = calloc(sizeof(bstat), nentries - 2); // at least 2 directory entries are '.' and '..'
+
+	for(i=0; i<nentries; i++) {
+		if(strlen(batdirs[i]->d_name)>=3 && strncmp("BAT", batdirs[i]->d_name, 3)==0) {
+			sprintf(filename, "/sys/class/power_supply/%s/uevent", batdirs[i]->d_name);
+			fp = fopen(filename, "r");
+
+			if(fp==NULL)
+				continue;
+
+			while(fp && !feof(fp)) {
+				if(fscanf(fp, "%[^=]=%[^\n]\n", label, value) != 2)
+					break;
+
+				if(strncmp(label, "POWER_SUPPLY_PRESENT", 20)==0) {
+					if(strncmp(value, "0", 1)==0) break;  // not present battery is not interesting
+					else {                                // (might be wrong, when battery is added)
+						num_batteries++;              	  // but this loop looks a bit fishy anyway...
+						XALLOC(battery_stats[num_batteries].name, char, strlen(batdirs[i]->d_name) + 1);
+						strcpy(battery_stats[num_batteries].name, batdirs[i]->d_name);
+					}
+				}
+				if(strncmp(label, "POWER_SUPPLY_ENERGY_FULL", 24)==0 && strlen(label)==24) {
+					battery_stats[num_batteries].capacity = atoi(value);
+					break;
+				}
+			}
+			fclose(fp);
+		}
+		free(batdirs[i]);
+	}
+	free(batdirs);
+	num_batteries++;
 }
 
-void check_cpu() {
+void check_brightness() {
+	FILE *fp;
+	char b[10], filename[BUF_SIZE];
+	struct dirent **brightdirs;
+	int i, ii, val, len, len2, nentries = scandir("/sys/class/backlight/", &brightdirs, NULL, alphasort);
+
+	if(nentries<=2) {
+		for(i=0; i<nentries; i++)
+			free(brightdirs[i]);
+		free(brightdirs);
+		return;
+	}
+
+	XALLOC(brightness_stat.brghts, int, nentries - 2);
+	XALLOC(brightness_stat.max_brghts, int, nentries - 2);
+	XALLOC(brightness_stat.devnames, char*, nentries - 2);
+    // brightness_stat.brghts = calloc(sizeof(int), nentries - 2); // at least 2 directory entries are '.' and '..'
+    // brightness_stat.max_brghts = calloc(sizeof(int), nentries - 2); // at least 2 directory entries are '.' and '..'
+    // brightness_stat.devnames = calloc(sizeof(char*), nentries - 2); // at least 2 directory entries are '.' and '..'
+    brightness_stat.num_brght = 0;
+
+	for(i=0; i<nentries; i++) {
+		if(strlen(brightdirs[i]->d_name)>=3) {
+            *filename = 0;
+            for(ii=0; ii<LENGTH(brightnes_names); ii++) {
+                len = strlen(brightnes_names[ii]);
+                len2 = strlen(brightdirs[i]->d_name);
+                if(len2>=len && strncmp(brightnes_names[ii], brightdirs[i]->d_name, len)==0) {
+                    sprintf(filename, "/sys/class/backlight/%s/max_brightness", brightdirs[i]->d_name);
+                    break;
+                }
+            }
+
+            if(*filename==0) continue;
+            fp = fopen(filename, "r");
+			if(fp==NULL) continue;
+            fgets(b, 10, fp);
+            if((val=atoi(b))<1) continue;
+            brightness_stat.max_brghts[brightness_stat.num_brght] = val;
+            brightness_stat.devnames[brightness_stat.num_brght] = calloc(sizeof(char), len);
+            strncpy(brightness_stat.devnames[brightness_stat.num_brght++], brightdirs[i]->d_name, len2);
+
+			fclose(fp);
+		}
+		free(brightdirs[i]);
+	}
+
+	free(brightdirs);
+}
+
+void check_cpus() {
 	FILE *fp = fopen("/proc/stat", "r");
+	unsigned int x;
 
 	if(fp==NULL)
 		return;
 
-	unsigned int x;
 	while(!feof(fp)) {
 		if(fscanf(fp, "cpu%*[0-9] %u %u %u %u", &x, &x, &x, &x) == 4) {
 			cpu_stat.num_cpus++;
@@ -339,101 +406,6 @@ void check_cpu() {
 	XALLOC(cpu_stat.perc, unsigned int, cpu_stat.num_cpus);
 
 	fclose(fp);
-}
-
-char get_cpu(char *status) {
-	FILE *fp = fopen("/proc/stat", "r");
-
-	if(fp==NULL)
-		return 0;
-
-	unsigned int running, total;
-	int i;
-
-	// skip first line
-	while(!feof(fp) && fgetc(fp)!='\n');
-
-	for(i=0; i<cpu_stat.num_cpus; i++) {
-		if(fscanf(fp, "cpu%*[0-9] %u %u %u %u", &cpu_stat.user[i], &cpu_stat.nice[i], &cpu_stat.system[i], &cpu_stat.idle[i]) == 4) {
-			running = cpu_stat.user[i] + cpu_stat.nice[i] + cpu_stat.system[i];
-			total = running + cpu_stat.idle[i];
-			cpu_stat.perc[i] = (total - cpu_stat.total[i]) ? ((running - cpu_stat.running[i]) * 100) / (total - cpu_stat.total[i]) : 0;
-			cpu_stat.running[i] = running;
-			cpu_stat.total[i] = total;
-			//printf("%d, %d, %d -- %d, %d, %d, %d\n", running, total, cpu_stat.perc[i], cpu_stat.user[i], cpu_stat.nice[i], cpu_stat.system[i], cpu_stat.idle[i]); 
-		}
-		while(!feof(fp) && fgetc(fp)!='\n');
-	}
-	fclose(fp);
-
-	cpu_format(status);
-
-	return 1;
-}
-
-char get_mem(char *status) {
-	FILE *fp = fopen("/proc/meminfo", "r");
-
-	if(fp==NULL)
-		return 0;
-
-	static char label[16];
-	unsigned int value;
-
-	while(!feof(fp)) { //               v- possible buffer overflow? TODO
-		if(fscanf(fp, "%[^:]: %u kB\n", label, &value)!=2) {
-			fclose(fp);
-			return 0;
-		}
-
-		if(strncmp(label, "MemTotal", 8)==0)
-			mem_stat.total = value;
-		else if(strncmp(label, "MemFree", 7)==0)
-			mem_stat.free = value;
-		else if(strncmp(label, "Buffers", 7)==0)
-			mem_stat.buffers = value;
-		else if(strncmp(label, "Cached", 67)==0) {
-			mem_stat.cached = value;
-			break;
-		}
-	}
-
-	fclose(fp);
-
-	mem_format(status);
-
-	return 1;
-}
-
-int read_clock(int num, char type[3], unsigned int *target) {
-	static char filename[BUF_SIZE];
-	FILE *fp;
-
-	snprintf(filename, BUF_SIZE, "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_%s_freq", num, type);
-	fp = fopen(filename, "r");
-	if(fp==NULL)
-		return 0;
-
-	if(fscanf(fp, "%u", target) != 1) {
-		fclose(fp);
-		return 0;
-	}
-
-	fclose(fp);
-	return 1;
-}
-
-char get_clock(char *status) {
-	int i;
-
-	for(i=0; i<clock_stat.num_clocks; i++) {
-		if(read_clock(i, "cur", &clock_stat.clocks[i])==0)
-			return 0;
-	}
-
-	clock_format(status);
-
-	return 1;
 }
 
 void check_clocks() {
@@ -465,27 +437,19 @@ void check_clocks() {
 	clock_stat.clocks = calloc(sizeof(unsigned int), clock_stat.num_clocks);
 }
 
-char get_therm(char *status) {
-	static char filename[BUF_SIZE];
-	int i;
-
-	for(i=0; i<therm_stat.num_therms; i++) {
-		snprintf(filename, BUF_SIZE, "/sys/devices/virtual/thermal/thermal_zone%d/temp", i);
-
-		FILE *fp = fopen(filename, "r");
-		if(fp==NULL)
-			return 0;
-
-		if(fscanf(fp, "%u", &therm_stat.therms[i]) != 1) {
-			fclose(fp);
-			return 0;
-		}
-		fclose(fp);
+void check_mp() {
+	if(!mp_port) { // unix sockets dont have a port
+		mp_stat.con.saun.sun_family = AF_UNIX;
+		strcpy(mp_stat.con.saun.sun_path, mp_adress);
+		mp_stat.con.domain = AF_UNIX;
+	} else { // internet sockets do have a port
+		mp_stat.con.host = gethostbyname(mp_adress);
+		mp_stat.con.sain.sin_family = AF_INET;
+		mp_stat.con.sain.sin_port = htons(mp_port);
+		mp_stat.con.sain.sin_addr = *((struct in_addr *)mp_stat.con.host->h_addr);
+		memset(&(mp_stat.con.sain.sin_zero), 0, 8);
+		mp_stat.con.domain = AF_INET;
 	}
-
-	therm_format(status);
-
-	return 1;
 }
 
 void check_therms() {
@@ -508,6 +472,242 @@ void check_therms() {
 	}
 	free(thermdirs);
 	XALLOC(therm_stat.therms, unsigned int, therm_stat.num_therms);
+}
+
+
+
+#ifdef USE_ALSAVOL
+char get_alsavol(char *status) {
+	// Derived from: http://blog.yjl.im/2009/05/get-volumec.html
+	// TODO: we shall read all channels, not only one
+	static const snd_mixer_selem_channel_id_t CHANNEL = SND_MIXER_SCHN_FRONT_LEFT;
+	snd_mixer_t *h_mixer;
+	snd_mixer_selem_id_t *sid;
+	snd_mixer_elem_t *elem ;
+
+	if(snd_mixer_open(&h_mixer, 1) < 0)
+		return 0;
+
+	if(snd_mixer_attach(h_mixer, ATTACH) < 0)
+		return 0;
+
+	if(snd_mixer_selem_register(h_mixer, NULL, NULL) < 0)
+		return 0;
+
+	if(snd_mixer_load(h_mixer) < 0)
+		return 0;
+	//was: 'snd_mixer_selem_id_alloca(&sid);', a macro:
+	//  #define __snd_alloca(ptr,type) do { *ptr = (type##_t *) alloca(type##_sizeof()); memset(*ptr, 0, type##_sizeof()); } while (0)
+	//  #define snd_mixer_selem_id_alloca(ptr) __snd_alloca(ptr, snd_mixer_selem_id)
+	//but for some reasons alloca is not available. TODO: check if this strange loop is necesary
+	do {
+		sid = (snd_mixer_selem_id_t *) calloc(sizeof(char), snd_mixer_selem_id_sizeof());
+		memset(sid, 0, snd_mixer_selem_id_sizeof());
+	} while (0);
+	snd_mixer_selem_id_set_index(sid, 0);
+	snd_mixer_selem_id_set_name(sid, SELEM_NAME);
+
+	if((elem = snd_mixer_find_selem(h_mixer, sid)) == NULL) {
+		free(sid); // TODO: why is only 'sid' freed?
+		return 0;
+	}
+
+	snd_mixer_selem_get_playback_volume(elem, CHANNEL, &alsavol_stat.vol);
+	snd_mixer_selem_get_playback_volume_range(elem, &alsavol_stat.vol_min, &alsavol_stat.vol_max);
+
+	snd_mixer_close(h_mixer);
+
+	alsavol_format(status);
+
+	free(sid);
+	return 1;
+}
+#endif
+
+char get_battery(char *status) {
+	int i = 0;
+	static char label[32], value[64];
+	static char filename[BUF_SIZE];
+	FILE *fp;
+
+	if(num_batteries==0)
+		return 0;
+
+	for(i=0; i<num_batteries; i++) {
+		sprintf(filename, "/sys/class/power_supply/%s/uevent", battery_stats[i].name);
+		fp = fopen(filename, "r");
+		if(fp==NULL)
+			return 0;
+
+		while(!feof(fp)) {
+			if(fscanf(fp, "%[^=]=%[^\n]\n", label, value)!=2) {
+				continue;
+			}
+
+			if(strncmp(label, "POWER_SUPPLY_STATUS", 19)==0) {
+				if(strncmp(value, "Charging", 8)==0)
+					battery_stats[i].state = BatCharging;
+				else if(strncmp(value, "Discharging", 11)==0)
+					battery_stats[i].state = BatDischarging;
+				else if(strncmp(value, "Charged", 7)==0)
+					battery_stats[i].state = BatCharged;
+				else
+					battery_stats[i].state = BatUnknown;
+			}
+			else if(strncmp(label, "POWER_SUPPLY_POWER_NOW", 23)==0) {
+				battery_stats[i].rate = atoi(value);
+				if(battery_stats[i].rate < 0) battery_stats[i].rate=1;
+			}
+			else if(strncmp(label, "POWER_SUPPLY_ENERGY_NOW", 22)==0) {
+				battery_stats[i].remaining = atoi(value);
+			}
+
+		}
+
+		fclose(fp);
+	}
+
+	battery_format(status);
+
+	return 1;
+}
+
+char get_brightness(char *status) {
+	int i, val;
+	static char b[10];
+	static char filename[BUF_SIZE];
+	FILE *fp;
+
+	if(brightness_stat.num_brght==0)
+		return 0;
+
+	for(i=0; i<brightness_stat.num_brght; i++) {
+		sprintf(filename, "/sys/class/backlight/%s/actual_brightness", brightness_stat.devnames[i]);
+
+		fp = fopen(filename, "r");
+		if(fp==NULL)
+			return 0;
+
+        fgets(b, 10, fp);
+
+        if((val=atoi(b))<0) continue;
+        brightness_stat.brghts[i] = val;
+		fclose(fp);
+	}
+
+	brightness_format(status);
+
+	return 1;
+}
+
+char get_clock(char *status) {
+	int i;
+
+	for(i=0; i<clock_stat.num_clocks; i++) {
+		if(read_clock(i, "cur", &clock_stat.clocks[i])==0)
+			return 0;
+	}
+
+	clock_format(status);
+
+	return 1;
+}
+
+char get_cpu(char *status) {
+	FILE *fp = fopen("/proc/stat", "r");
+
+	if(fp==NULL)
+		return 0;
+
+	unsigned int running, total;
+	int i;
+
+	// skip first line
+	while(!feof(fp) && fgetc(fp)!='\n');
+
+	for(i=0; i<cpu_stat.num_cpus; i++) {
+		if(fscanf(fp, "cpu%*[0-9] %u %u %u %u", &cpu_stat.user[i], &cpu_stat.nice[i], &cpu_stat.system[i], &cpu_stat.idle[i]) == 4) {
+			running = cpu_stat.user[i] + cpu_stat.nice[i] + cpu_stat.system[i];
+			total = running + cpu_stat.idle[i];
+			cpu_stat.perc[i] = (total - cpu_stat.total[i]) ? ((running - cpu_stat.running[i]) * 100) / (total - cpu_stat.total[i]) : 0;
+			cpu_stat.running[i] = running;
+			cpu_stat.total[i] = total;
+		}
+		while(!feof(fp) && fgetc(fp)!='\n');
+	}
+	fclose(fp);
+
+	cpu_format(status);
+
+	return 1;
+}
+
+char get_datetime(char *status) {
+	datetime_stat.time = time(NULL);
+	datetime_format(status);
+	return 1;
+}
+
+char get_mem(char *status) {
+	FILE *fp = fopen("/proc/meminfo", "r");
+
+	if(fp==NULL)
+		return 0;
+
+	static char label[18];
+	unsigned int value;
+
+	while(!feof(fp)) {
+		if(fscanf(fp, "%16[^:]: %u kB\n", label, &value)!=2) {
+			fclose(fp);
+			return 0;
+		}
+
+		if(strncmp(label, "MemTotal", 8)==0)
+			mem_stat.total = value;
+		else if(strncmp(label, "MemFree", 7)==0)
+			mem_stat.free = value;
+		else if(strncmp(label, "Buffers", 7)==0)
+			mem_stat.buffers = value;
+		else if(strncmp(label, "Cached", 67)==0) {
+			mem_stat.cached = value;
+			break;
+		}
+	}
+
+	fclose(fp);
+
+	mem_format(status);
+
+	return 1;
+}
+
+#ifdef USE_NOTIFY
+char get_messages(char *status) {
+	int n=0;
+	notify_stat.message = notify_get_message(&n);
+
+	if(notify_stat.message!=NULL) {
+		notify_format(status);
+		return 1;
+	}
+	return 0;
+}
+#endif
+
+char get_mp(char *status) {
+	if(mp_stat.con.connected!=1) {
+		check_con(&mp_stat.con);
+		if(mp_stat.con.connected!=1)
+			return 0;
+	}
+	
+	if(mp_stat.con.connected==1) {
+		mp_parse();
+		mp_format(status);
+	}
+	
+	return 1;
 }
 
 char get_net(char *status) {
@@ -571,6 +771,29 @@ char get_net(char *status) {
 	return 1;
 }
 
+char get_therm(char *status) {
+	static char filename[BUF_SIZE];
+	int i;
+
+	for(i=0; i<therm_stat.num_therms; i++) {
+		snprintf(filename, BUF_SIZE, "/sys/devices/virtual/thermal/thermal_zone%d/temp", i);
+
+		FILE *fp = fopen(filename, "r");
+		if(fp==NULL)
+			return 0;
+
+		if(fscanf(fp, "%u", &therm_stat.therms[i]) != 1) {
+			fclose(fp);
+			return 0;
+		}
+		fclose(fp);
+	}
+
+	therm_format(status);
+
+	return 1;
+}
+
 char get_wifi(char *status) {
 	FILE *fp = fopen("/proc/net/wireless", "r");
 
@@ -594,382 +817,8 @@ char get_wifi(char *status) {
 	return 1;
 }
 
-char get_battery(char *status) {
-	int i = 0;
-	static char label[32], value[64];
-	static char filename[BUF_SIZE];
-	FILE *fp;
 
-	if(num_batteries==0)
-		return 0;
 
-	for(i=0; i<num_batteries; i++) {
-		sprintf(filename, "/sys/class/power_supply/%s/uevent", battery_stats[i].name);
-		fp = fopen(filename, "r");
-		if(fp==NULL)
-			return 0;
-
-		while(!feof(fp)) {
-			if(fscanf(fp, "%[^=]=%[^\n]\n", label, value)!=2) {
-				//fclose(fp);
-				//return 0;
-				continue;
-			}
-
-			if(strncmp(label, "POWER_SUPPLY_STATUS", 19)==0) {
-				if(strncmp(value, "Charging", 8)==0)
-					battery_stats[i].state = BatCharging;
-				else if(strncmp(value, "Discharging", 11)==0)
-					battery_stats[i].state = BatDischarging;
-				else if(strncmp(value, "Charged", 7)==0)
-					battery_stats[i].state = BatCharged;
-				else
-					battery_stats[i].state = BatUnknown;
-			}
-			else if(strncmp(label, "POWER_SUPPLY_POWER_NOW", 23)==0) {
-				battery_stats[i].rate = atoi(value);
-				if(battery_stats[i].rate < 0) battery_stats[i].rate=1;
-			}
-			else if(strncmp(label, "POWER_SUPPLY_ENERGY_NOW", 22)==0) {
-				battery_stats[i].remaining = atoi(value);
-			}
-
-		}
-
-		fclose(fp);
-	}
-
-	battery_format(status);
-
-	return 1;
-}
-
-void check_batteries() {
-	// TODO: the battery count might change on run time?
-	struct dirent **batdirs;
-	int i, nentries = scandir("/sys/class/power_supply/", &batdirs, NULL, alphasort);
-
-	if(nentries<=2) {
-		for(i=0; i<nentries; i++)
-			free(batdirs[i]);
-		free(batdirs);
-		return;
-	}
-
-	FILE *fp;
-	char label[32], value[64];
-	char filename[BUF_SIZE];
-	num_batteries = -1;
-
-	battery_stats = calloc(sizeof(bstat), nentries - 2); // at least 2 directory entries are '.' and '..'
-
-	for(i=0; i<nentries; i++) {
-		if(strlen(batdirs[i]->d_name)>=3 && strncmp("BAT", batdirs[i]->d_name, 3)==0) {
-			sprintf(filename, "/sys/class/power_supply/%s/uevent", batdirs[i]->d_name);
-			fp = fopen(filename, "r");
-
-			if(fp==NULL)
-				continue;
-
-			while(fp && !feof(fp)) {
-				if(fscanf(fp, "%[^=]=%[^\n]\n", label, value) != 2)
-					break;
-
-				if(strncmp(label, "POWER_SUPPLY_PRESENT", 20)==0) {
-					if(strncmp(value, "0", 1)==0) break;  // not present battery is not interesting
-					else {                                // (might be wrong, when battery is added)
-						num_batteries++;              	  // but this loop looks a bit fishy anyway...
-						XALLOC(battery_stats[num_batteries].name, char, strlen(batdirs[i]->d_name) + 1);
-						strcpy(battery_stats[num_batteries].name, batdirs[i]->d_name);
-					}
-				}
-				if(strncmp(label, "POWER_SUPPLY_ENERGY_FULL", 23)==0) {
-					battery_stats[num_batteries].capacity = atoi(value);
-					break;
-				}
-			}
-			fclose(fp);
-		}
-		free(batdirs[i]);
-	}
-	free(batdirs);
-	num_batteries++;
-}
-
-char get_brightness(char *status) {
-	int i, val;
-	static char b[10];
-	static char filename[BUF_SIZE];
-	FILE *fp;
-
-	if(brightness_stat.num_brght==0)
-		return 0;
-
-	for(i=0; i<brightness_stat.num_brght; i++) {
-		sprintf(filename, "/sys/class/backlight/%s/actual_brightness", brightness_stat.devnames[i]);
-
-		fp = fopen(filename, "r");
-		if(fp==NULL)
-			return 0;
-
-        fgets(b, 10, fp);
-
-        if((val=atoi(b))<0) continue;
-        brightness_stat.brghts[i] = val;
-		fclose(fp);
-	}
-
-	brightness_format(status);
-
-	return 1;
-}
-
-void check_brightness() {
-	FILE *fp;
-	char b[10];
-	char filename[BUF_SIZE];
-	struct dirent **brightdirs;
-	int i, ii, val, len, len2;
-
-	int nentries = scandir("/sys/class/backlight/", &brightdirs, NULL, alphasort);
-	if(nentries<=2) return;
-
-    brightness_stat.brghts = calloc(sizeof(int), nentries - 2); // at least 2 directory entries are '.' and '..'
-    brightness_stat.max_brghts = calloc(sizeof(int), nentries - 2); // at least 2 directory entries are '.' and '..'
-    brightness_stat.devnames = calloc(sizeof(char*), nentries - 2); // at least 2 directory entries are '.' and '..'
-    brightness_stat.num_brght = 0;
-
-	for(i=0; i<nentries; i++) {
-		if(strlen(brightdirs[i]->d_name)>=3) {
-            *filename = 0;
-            for(ii=0; ii<LENGTH(brightnes_names); ii++) {
-                len = strlen(brightnes_names[ii]);
-                len2 = strlen(brightdirs[i]->d_name);
-                if(len2>=len && strncmp(brightnes_names[ii], brightdirs[i]->d_name, len)==0) {
-                    sprintf(filename, "/sys/class/backlight/%s/max_brightness", brightdirs[i]->d_name);
-                    break;
-                }
-            }
-
-            if(*filename==0) continue;
-            fp = fopen(filename, "r");
-			if(fp==NULL) continue;
-            fgets(b, 10, fp);
-            if((val=atoi(b))<1) continue;
-            brightness_stat.max_brghts[brightness_stat.num_brght] = val;
-            brightness_stat.devnames[brightness_stat.num_brght] = calloc(sizeof(char), len);
-            strncpy(brightness_stat.devnames[brightness_stat.num_brght++], brightdirs[i]->d_name, len2);
-
-			fclose(fp);
-		}
-	}
-}
-
-// #ifdef USE_SOCKETS
-// // TODO: consolidate: socket opener, line getter
-// char get_cmus(char*status) {
-//     static const char cmd[] = "status\n";
-// 	static char type[128], value[128], tag[128], value2[128];
-// 	int tvol = 0;
-// #ifdef USE_ALSAVOL
-// #define SOCKBUFZIZE 1024
-// 	int n, bufp = 0;
-// 	static char buf[SOCKBUFZIZE];
-// #endif
-
-// 	if(cmus_connect!=1) {
-// 		check_cmus();
-// 		return 0;
-// 	}
-
-//     if(send(cmus_sock, cmd, strlen(cmd), MSG_NOSIGNAL)<0) {
-// 		close(cmus_sock);
-// 		return 0;
-// 	}
-
-// #ifdef USE_ALSAVOL
-// 	n = read(cmus_sock, buf, SOCKBUFZIZE);
-// 	buf[n] = 0;
-
-// 	while(bufp<n) {
-// 		if(sscanf(buf+bufp, "%s %[^\n]\n", type, value) != 2) {
-// 			break;
-// 		}
-// 		bufp+=strlen(type) + strlen(value) + 2;
-// #else
-// 	while(cmus_fp && !feof(cmus_fp)) {
-// 		if(fscanf(cmus_fp, "%s %[^\n]\n", type, value) != 2)
-// 			break;
-// #endif
-
-// 		if(strncmp(type, "status", 6)==0) {
-// 			if(strncmp(value, "playing", 7)==0)
-// 				cmus_stat.status = 1;
-// 			else if(strncmp(value, "stopped", 7)==0)
-// 				cmus_stat.status = 2;
-// 			else
-// 				cmus_stat.status = 0;
-// 		} else if(strncmp(type, "duration", 8)==0) {
-// 			cmus_stat.duration = atoi(value);
-// 		} else if(strncmp(type, "position", 8)==0) {
-// 			cmus_stat.position = atoi(value);
-// 		} else if(strncmp(type, "tag", 3)==0) {
-// 			if(sscanf(value, "%s %[^\n]\n", tag, value2) == 2) {
-// 				if(strncmp(tag, "artist", 6)==0) {
-// 					strncpy(cmus_stat.artist, value2, 128);
-// 				} else if(strncmp(tag, "album", 5)==0) {
-// 					strncpy(cmus_stat.album, value2, 128);
-// 				} else if(strncmp(tag, "title", 5)==0) {
-// 					strncpy(cmus_stat.title, value2, 128);
-// 				}
-// 			}
-// 		} else if(strncmp(type, "set", 3)==0) {
-// 			if(sscanf(value, "%s %[^\n]\n", tag, value2) == 2) {
-// 				if(strncmp(tag, "repeat", 6)==0) {
-// 					if(strncmp(value2, "true", 4)==0)
-// 						cmus_stat.repeat = 1;
-// 					else
-// 						cmus_stat.repeat = 0;
-// 				} else if(strncmp(tag, "shuffle", 7)==0) {
-// 					if(strncmp(value2, "true", 4)==0)
-// 						cmus_stat.shuffle = 1;
-// 					else
-// 						cmus_stat.shuffle = 0;
-// 				} else if(strncmp(tag, "vol_", 4)==0) {
-// 					tvol += atoi(value2);
-// 				}
-// 			}
-// 		}
-// 	}
-// 	if(tvol) cmus_stat.volume = tvol / 2;
-
-// 	mp_stat = &cmus_stat;
-// 	cmus_format(status);
-
-// 	return 1;
-// }
-
-// void check_cmus() {
-//     int len, flags;
-//     struct sockaddr_un saun;
-
-//     if((cmus_sock = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
-//         cmus_connect = 0;
-//         return;
-//     }
-
-// 	flags = fcntl(cmus_sock, F_GETFL, 0);
-// 	fcntl(cmus_sock, F_SETFL, flags | O_NONBLOCK);
-
-//     saun.sun_family = AF_UNIX;
-//     strcpy(saun.sun_path, cmus_adress);
-
-//     len = sizeof(saun.sun_family) + strlen(saun.sun_path);
-
-//     if(connect(cmus_sock, (struct sockaddr *)&saun, len) < 0) {
-//         close(cmus_sock);
-// 		cmus_connect = 0;
-//         return;
-//     }
-
-//     cmus_connect = 1;
-
-// #ifndef USE_ALSAVOL
-// 	cmus_fp = fdopen(cmus_sock, "r");
-// #endif
-// 	cmus_stat.volume = 0;
-// }
-
-// char get_mpd(char*status) {
-//     static const char cmd[] = "status\ncurrentsong\n";
-// 	static char type[128], value[128];
-// 	char *dp;
-// #ifdef USE_ALSAVOL
-// #define SOCKBUFZIZE 1024
-// 	int n, bufp = 0;
-// 	static char buf[SOCKBUFZIZE];
-// #endif
-
-// 	if(mpd_connect!=1) {
-// 		check_mpd();
-// 		return 0;
-// 	}
-
-//     if(send(mpd_sock, cmd, strlen(cmd), MSG_NOSIGNAL)<0) {
-// 		close(mpd_sock);
-// 		return 0;
-// 	}
-
-// #ifdef USE_ALSAVOL
-// 	n = read(mpd_sock, buf, SOCKBUFZIZE);
-// 	buf[n] = 0;
-
-// 	while(bufp<n) {
-// 		if(sscanf(buf+bufp, "%[^:]: %[^\n]\n", type, value) != 2) {
-// 			bufp+=strlen(type) + strlen(value) + 3;
-// 			continue;
-// 		}
-// 		bufp+=strlen(type) + strlen(value) + 3;
-// #else
-// 	while(mpd_fp && !feof(mpd_fp)) {
-// 		if(fscanf(mpd_fp, "%[^:]: %[^\n]\n", type, value) != 2)
-// 			continue;
-// #endif
-
-// 		if(strncmp(type, "state", 5)==0) {
-// 			if(strncmp(value, "play", 4)==0)
-// 				mpd_stat.status = 1;
-// 			else if(strncmp(value, "stop", 4)==0)
-// 				mpd_stat.status = 2;
-// 			else
-// 				mpd_stat.status = 0;
-// 		} else if(strncmp(type, "time", 4)==0) {
-// 			mpd_stat.position = atoi(value);
-// 			dp = strstr(value, ":");
-// 			dp++;
-// 			mpd_stat.duration = atoi(dp);
-// 		} else if(strncmp(type, "Artist", 6)==0) {
-// 			strncpy(mpd_stat.artist, value, 128);
-// 		} else if(strncmp(type, "Album", 5)==0) {
-// 			strncpy(mpd_stat.album, value, 128);
-// 		} else if(strncmp(type, "Title", 5)==0) {
-// 			strncpy(mpd_stat.title, value, 128);
-// 		} else if(strncmp(type, "repeat", 6)==0) {
-// 			if(strncmp(value, "1", 1)==0)
-// 				mpd_stat.repeat = 1;
-// 			else
-// 				mpd_stat.repeat = 0;
-// 		} else if(strncmp(type, "random", 6)==0) {
-// 			if(strncmp(value, "1", 1)==0)
-// 				mpd_stat.shuffle = 1;
-// 			else
-// 				mpd_stat.shuffle = 0;
-// 		} else if(strncmp(type, "volume", 6)==0) {
-// 			mpd_stat.volume = atoi(value);
-// 		}
-// 	}
-// 	mp_stat = &mpd_stat;
-// 	cmus_format(status);
-
-// 	return 1;
-// }
-
-void prepare_con(con *con) {
-	struct hostent *host;
-
-    if(mp_port) { // unix sockets dont have a port
-    	con->saun.sun_family = AF_UNIX;
-    	strcpy(con->saun.sun_path, mp_adress);
-    	con->domain = AF_UNIX;
-    } else { // internet sockets do have a port
-		con->host = gethostbyname(mp_adress);
-		con->sain.sin_family = AF_INET;
-		con->sain.sin_port = htons(mp_port);
-		con->sain.sin_addr = *((struct in_addr *)host->h_addr);
-		memset(&(con->sain.sin_zero), 0, 8);
-		con->domain = AF_INET;
-	}
-}
 
 void check_con(con *con) {
     int flags, stat;
@@ -985,8 +834,113 @@ void check_con(con *con) {
     else
     	stat = connect(con->sock, (struct sockaddr *)&con->saun, sizeof(con->saun.sun_family) + strlen(con->saun.sun_path));
     if(stat < 0) {
-		perror("sock");
-        printf("con fail\n");
+        close(con->sock);
+		con->connected = 0;
+        return;
+    }
+
+	flags = fcntl(con->sock, F_GETFL, 0);
+	fcntl(con->sock, F_SETFL, flags | O_NONBLOCK);
+
+    con->connected = 1;
+
+	con->fp = fdopen(con->sock, "r");
+}
+
+char mp_parse_mpd() {
+    static const char cmd[] = "status\ncurrentsong\n";
+	static char type[128], value[128];
+	char *dp;
+
+    if(send(mp_stat.con.sock, cmd, strlen(cmd), MSG_NOSIGNAL)<0) {
+		mp_stat.con.connected = 0;
+		close(mp_stat.con.sock);
+		fclose(mp_stat.con.fp);
+		return 0;
+	}
+
+	while(mp_stat.con.fp && !feof(mp_stat.con.fp)) {
+		if(fscanf(mp_stat.con.fp, "%[^:]: %[^\n]\n", type, value) != 2)
+			break;
+		
+		if(strncmp(type, "state", 5)==0) {
+			if(strncmp(value, "play", 4)==0)
+				mp_stat.status = 1;
+			else if(strncmp(value, "stop", 4)==0)
+				mp_stat.status = 2;
+			else
+				mp_stat.status = 0;
+		} else if(strncmp(type, "time", 4)==0) {
+			mp_stat.position = atoi(value);
+			dp = strstr(value, ":");
+			dp++;
+			mp_stat.duration = atoi(dp);
+		} else if(strncmp(type, "Artist", 6)==0) {
+			strncpy(mp_stat.artist, value, 128);
+		} else if(strncmp(type, "Album", 5)==0) {
+			strncpy(mp_stat.album, value, 128);
+		} else if(strncmp(type, "Title", 5)==0) {
+			strncpy(mp_stat.title, value, 128);
+		} else if(strncmp(type, "repeat", 6)==0) {
+			if(strncmp(value, "1", 1)==0)
+				mp_stat.repeat = 1;
+			else
+				mp_stat.repeat = 0;
+		} else if(strncmp(type, "random", 6)==0) {
+			if(strncmp(value, "1", 1)==0)
+				mp_stat.shuffle = 1;
+			else
+				mp_stat.shuffle = 0;
+		} else if(strncmp(type, "volume", 6)==0) {
+			mp_stat.volume = atoi(value);
+		}
+	}
+
+	return 1;
+}
+
+char mp_parse_madasul() {
+    static const char cmd[] = "status #c\t##\t#s\t#r\t#n\t$a\t$l\t$t\n";
+	unsigned int track, tracknum, atrack;
+
+	mp_stat.duration = mp_stat.position = mp_stat.volume = -1;
+
+    if(send(mp_stat.con.sock, cmd, strlen(cmd), MSG_NOSIGNAL)<0) {
+		mp_stat.con.connected = 0;
+		close(mp_stat.con.sock);
+		fclose(mp_stat.con.fp);
+		return 0;
+	}
+
+	while(mp_stat.con.fp && !feof(mp_stat.con.fp)) {
+		if(fscanf(mp_stat.con.fp, "%u\t%u\t%i\t%i\t%u\t%128[^\t]\t%128[^\t]\t%128[^\n]\n", &track, &tracknum, &mp_stat.status, &mp_stat.shuffle, &atrack, mp_stat.artist, mp_stat.album, mp_stat.title)!=8)
+			continue;
+
+		mp_stat.status = mp_stat.status==3 ? 1 : (mp_stat.status==1 ? 2 : 0);		
+	}
+
+	mp_stat.con.connected = 0;
+	close(mp_stat.con.sock);
+	fclose(mp_stat.con.fp);
+
+	return 1;
+}
+
+/*
+void check_con(con *con) {
+    int flags, stat;
+
+    if((con->sock = socket(con->domain, SOCK_STREAM, 0)) < 0) {
+        printf("sock fail\n");
+		con->connected = 0;
+        return;
+    }
+
+    if(con->domain == AF_INET)
+    	stat = connect(con->sock, (struct sockaddr *)&con->sain, sizeof(struct sockaddr));
+    else
+    	stat = connect(con->sock, (struct sockaddr *)&con->saun, sizeof(con->saun.sun_family) + strlen(con->saun.sun_path));
+    if(stat < 0) {
         close(con->sock);
 		con->connected = 0;
         return;
@@ -1002,19 +956,6 @@ void check_con(con *con) {
 	#endif
 }
 
-char get_mp() {
-	if(mp_stat.con.connected!=1) {
-		check_con(&mp_stat.con);
-		return 0;
-	}
-
-	if(mp_stat.con.connected==1) {
-		//mp_stat.parse_func();
-		mp_parse();
-	}
-
-	return 1;
-}
 
 char mpd_parse() {
     static const char cmd[] = "status\ncurrentsong\n";
@@ -1028,6 +969,7 @@ char mpd_parse() {
 	#endif
 
     if(send(mp_stat.con.sock, cmd, strlen(cmd), MSG_NOSIGNAL)<0) {
+		mp_stat.con.connected = 0;
 		close(mp_stat.con.sock);
 		return 0;
 	}
@@ -1080,118 +1022,31 @@ char mpd_parse() {
 			mp_stat.volume = atoi(value);
 		}
 	}
-	// mp_stat = &mpd_stat;
-	// cmus_format(status);
 
 	return 1;
 }
 
-void check_mp() {
-	prepare_con(&mp_stat.con);
-}
+*/
 
-// void get_mpd() {
+int read_clock(int num, char type[3], unsigned int *target) {
+	static char filename[BUF_SIZE];
+	FILE *fp;
 
-// }
-
-// void check_mpd() {
-//     int flags;
-// 	struct hostent *host;
-//     struct sockaddr_in sain;
-
-// 	host = gethostbyname(mpd_adress);
-
-//     if((mpd_sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-//         printf("sock fail\n");
-// 		mpd_connect = 0;
-//         return;
-//     }
-
-// 	sain.sin_family = AF_INET;
-// 	sain.sin_port = htons(mpd_port);
-// 	sain.sin_addr = *((struct in_addr *)host->h_addr);
-// 	memset(&(sain.sin_zero), 0, 8);
-
-//     if(connect(mpd_sock, (struct sockaddr *)&sain, sizeof(struct sockaddr)) < 0) {
-// 		perror("sock");
-//         printf("con fail\n");
-//         close(mpd_sock);
-// 		mpd_connect = 0;
-//         return;
-//     }
-
-// 	flags = fcntl(mpd_sock, F_GETFL, 0);
-// 	fcntl(mpd_sock, F_SETFL, flags | O_NONBLOCK);
-
-//     mpd_connect = 1;
-
-// #ifndef USE_ALSAVOL
-// 	mpd_fp = fdopen(mpd_sock, "r");
-// #endif
-// 	mpd_stat.volume = 0;
-// }
-// #endif
-
-#ifdef USE_ALSAVOL
-// Derived from: http://blog.yjl.im/2009/05/get-volumec.html
-// TODO: we shall read all channels, not only one
-static const snd_mixer_selem_channel_id_t CHANNEL = SND_MIXER_SCHN_FRONT_LEFT;
-char get_alsavol(char *status) {
-	snd_mixer_t *h_mixer;
-	snd_mixer_selem_id_t *sid;
-	snd_mixer_elem_t *elem ;
-
-	if(snd_mixer_open(&h_mixer, 1) < 0)
+	snprintf(filename, BUF_SIZE, "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_%s_freq", num, type);
+	fp = fopen(filename, "r");
+	if(fp==NULL)
 		return 0;
 
-	if(snd_mixer_attach(h_mixer, ATTACH) < 0)
-		return 0;
-
-	if(snd_mixer_selem_register(h_mixer, NULL, NULL) < 0)
-		return 0;
-
-	if(snd_mixer_load(h_mixer) < 0)
-		return 0;
-	//was: 'snd_mixer_selem_id_alloca(&sid);', a macro:
-	//  #define __snd_alloca(ptr,type) do { *ptr = (type##_t *) alloca(type##_sizeof()); memset(*ptr, 0, type##_sizeof()); } while (0)
-	//  #define snd_mixer_selem_id_alloca(ptr) __snd_alloca(ptr, snd_mixer_selem_id)
-	//but for some reasons alloca is not available. TODO: check if this strange loop is necesary
-	do {
-		sid = (snd_mixer_selem_id_t *) calloc(sizeof(char), snd_mixer_selem_id_sizeof());
-		memset(sid, 0, snd_mixer_selem_id_sizeof());
-	} while (0);
-	snd_mixer_selem_id_set_index(sid, 0);
-	snd_mixer_selem_id_set_name(sid, SELEM_NAME);
-
-	if((elem = snd_mixer_find_selem(h_mixer, sid)) == NULL) {
-		free(sid);
+	if(fscanf(fp, "%u", target) != 1) {
+		fclose(fp);
 		return 0;
 	}
 
-	snd_mixer_selem_get_playback_volume(elem, CHANNEL, &alsavol_stat.vol);
-	snd_mixer_selem_get_playback_volume_range(elem, &alsavol_stat.vol_min, &alsavol_stat.vol_max);
-
-	snd_mixer_close(h_mixer);
-
-	alsavol_format(status);
-
-	free(sid);
+	fclose(fp);
 	return 1;
 }
-#endif
 
-#ifdef USE_NOTIFY
-char get_messages(char *status) {
-	int n=0;
-	notify_stat.message = notify_get_message(&n);
 
-	if(notify_stat.message!=NULL) {
-		notify_format(status);
-		return 1;
-	}
-	return 0;
-}
-#endif
 
 void die(const char *errstr, ...) {
 	va_list ap;
@@ -1216,14 +1071,12 @@ int main(int argc, char **argv) {
 	root = DefaultRootWindow(dpy);
 #endif
 
-	check_cpu();
+	check_cpus();
 	check_batteries();
 	check_clocks();
 	check_therms();
     check_brightness();
 #ifdef USE_SOCKETS
-	// check_cmus();
-	// check_mpd();
 	check_mp();
 #endif
 	net_stat.count = 0;
