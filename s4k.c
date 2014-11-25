@@ -98,11 +98,38 @@ enum {
 
 
 /* structs */
-typedef struct dstat { // datetime
-	time_t time;
-} dstat;
+#ifdef USE_ALSAVOL
+typedef struct { // volume
+	long vol;
+	long vol_min;
+	long vol_max;
+} t_alsavol;
+#endif
 
-typedef struct cstat { // cpu
+typedef struct { // battery
+	int num_bats;
+	int *state;
+	unsigned int *rate;
+	unsigned int *remaining;
+	unsigned int *capacity;
+	char **name;
+} t_bateries;
+
+typedef struct { // brightness
+	int num_brght;
+	unsigned int *brghts;
+	unsigned int *max_brghts;
+	char **devnames;
+} t_brightness;
+
+typedef struct { // clock
+	int num_clocks;
+	unsigned int clock_min;
+	unsigned int clock_max;
+	unsigned int *clocks;
+} t_clocks;
+
+typedef struct { // cpu
 	int num_cpus;
 	unsigned int *user;
 	unsigned int *nice;
@@ -111,60 +138,27 @@ typedef struct cstat { // cpu
 	unsigned int *running;
 	unsigned int *total;
 	unsigned int *perc;
-} cstat;
+} t_cpus;
 
-typedef struct mstat { // memory
+typedef struct { // datetime
+	time_t time;
+} t_date;
+
+typedef struct { // memory
 	unsigned int total;
 	unsigned int free;
 	unsigned int buffers;
 	unsigned int cached;
-} mstat;
+} t_mem;
 
-typedef struct lstat { // clock
-	int num_clocks;
-	unsigned int clock_min;
-	unsigned int clock_max;
-	unsigned int *clocks;
-} lstat;
-
-typedef struct tstat { // temperature
-	int num_therms;
-	unsigned int *therms;
-} tstat;
-
-typedef struct nwstat { // network
-	int count;
-	unsigned int *rx;
-	unsigned int *tx;
-	unsigned int *lrx;
-	unsigned int *ltx;
-	char **devnames;
-} nwstat;
-
-typedef struct wstat { // wifi
-	char devname[20];
-	unsigned int wstatus;
-	unsigned int perc;
-} wstat;
-
-typedef struct bstat { // battery
-	int num_bats;
-	int *state;
-	unsigned int *rate;
-	unsigned int *remaining;
-	unsigned int *capacity;
-	char **name;
-} bstat;
-
-typedef struct brstat { // brightness
-	int num_brght;
-	unsigned int *brghts;
-	unsigned int *max_brghts;
-	char **devnames;
-} brstat;
+#ifdef USE_NOTIFY
+typedef struct { // notifications
+	notification *message;
+} t_notify;
+#endif
 
 #ifdef USE_SOCKETS
-typedef struct con {
+typedef struct {
 	struct hostent* host;
     struct sockaddr_in sain;
     struct sockaddr_un saun;
@@ -172,8 +166,9 @@ typedef struct con {
     int connected;
     int domain;
     FILE* fp;
-} con;
-typedef struct mpstat { // music player
+} t_connection;
+
+typedef struct { // music player
 	int status;
 	int duration;
 	int position;
@@ -183,24 +178,30 @@ typedef struct mpstat { // music player
 	char artist[128];
 	char album[128];
 	char title[128];
-	con con;
+	t_connection con;
 	void (*parse_func)();
-} mpstat;
+} t_mp;
 #endif
 
-#ifdef USE_ALSAVOL
-typedef struct astat { // volume
-	long vol;
-	long vol_min;
-	long vol_max;
-} astat;
-#endif
+typedef struct nwstat { // network
+	int count;
+	unsigned int *rx;
+	unsigned int *tx;
+	unsigned int *lrx;
+	unsigned int *ltx;
+	char **devnames;
+} t_net;
 
-#ifdef USE_NOTIFY
-typedef struct nstat { // notifications
-	notification *message;
-} nstat;
-#endif
+typedef struct { // temperature
+	int num_therms;
+	unsigned int *therms;
+} t_therms;
+
+typedef struct wstat { // wifi
+	char devname[20];
+	unsigned int wstatus;
+	unsigned int perc;
+} t_wifi;
 
 typedef char (*status_f)(char *);
 
@@ -224,7 +225,7 @@ static char get_messages(char *status);
 #ifdef USE_SOCKETS
 static void check_mp();
 static char get_mp();
-static void check_con(con *con);
+static void check_con(t_connection *con);
 static char mp_parse_mpd();
 static char mp_parse_madasul();
 #endif
@@ -238,24 +239,23 @@ static int read_clock(int num, char type[3], unsigned int *target);
 
 /* variables */
 #ifdef USE_ALSAVOL
-static astat alsavol_stat;
+static t_alsavol alsavol_stat;
 #endif
-//int num_batteries;
-static bstat battery_stats;
-static brstat brightness_stat;
-static lstat clock_stat;
-static cstat cpu_stat;
-static dstat datetime_stat;
-static mstat mem_stat;
+static t_bateries battery_stats;
+static t_brightness brightness_stat;
+static t_clocks clock_stat;
+static t_cpus cpu_stat;
+static t_date datetime_stat;
+static t_mem mem_stat;
 #ifdef USE_NOTIFY
-static nstat notify_stat;
+static t_notify notify_stat;
 #endif
 #ifdef USE_SOCKETS
-static mpstat mp_stat;
+static t_mp mp_stat;
 #endif
-static nwstat net_stat;
-static tstat therm_stat;
-static wstat wifi_stat;
+static t_net net_stat;
+static t_therms therm_stat;
+static t_wifi wifi_stat;
 
 static const status_f statusfuncs[] = {
 	get_datetime,
@@ -389,31 +389,6 @@ void check_brightness() {
 	free(brightdirs);
 }
 
-void check_cpus() {
-	FILE *fp = fopen("/proc/stat", "r");
-	unsigned int x;
-
-	if(fp==NULL)
-		return;
-
-	while(!feof(fp)) {
-		if(fscanf(fp, "cpu%*[0-9] %u %u %u %u", &x, &x, &x, &x) == 4) {
-			cpu_stat.num_cpus++;
-		}
-		while(!feof(fp) && fgetc(fp)!='\n');
-	}
-
-	XALLOC(cpu_stat.user, unsigned int, cpu_stat.num_cpus);
-	XALLOC(cpu_stat.nice, unsigned int, cpu_stat.num_cpus);
-	XALLOC(cpu_stat.system, unsigned int, cpu_stat.num_cpus);
-	XALLOC(cpu_stat.idle, unsigned int, cpu_stat.num_cpus);
-	XALLOC(cpu_stat.running, unsigned int, cpu_stat.num_cpus);
-	XALLOC(cpu_stat.total, unsigned int, cpu_stat.num_cpus);
-	XALLOC(cpu_stat.perc, unsigned int, cpu_stat.num_cpus);
-
-	fclose(fp);
-}
-
 void check_clocks() {
 	struct dirent **clockdirs;
 	int i, nentries = scandir("/sys/devices/system/cpu/", &clockdirs, NULL, alphasort);
@@ -441,6 +416,31 @@ void check_clocks() {
 	}
 	free(clockdirs);
 	clock_stat.clocks = calloc(sizeof(unsigned int), clock_stat.num_clocks);
+}
+
+void check_cpus() {
+	FILE *fp = fopen("/proc/stat", "r");
+	unsigned int x;
+
+	if(fp==NULL)
+		return;
+
+	while(!feof(fp)) {
+		if(fscanf(fp, "cpu%*[0-9] %u %u %u %u", &x, &x, &x, &x) == 4) {
+			cpu_stat.num_cpus++;
+		}
+		while(!feof(fp) && fgetc(fp)!='\n');
+	}
+
+	XALLOC(cpu_stat.user, unsigned int, cpu_stat.num_cpus);
+	XALLOC(cpu_stat.nice, unsigned int, cpu_stat.num_cpus);
+	XALLOC(cpu_stat.system, unsigned int, cpu_stat.num_cpus);
+	XALLOC(cpu_stat.idle, unsigned int, cpu_stat.num_cpus);
+	XALLOC(cpu_stat.running, unsigned int, cpu_stat.num_cpus);
+	XALLOC(cpu_stat.total, unsigned int, cpu_stat.num_cpus);
+	XALLOC(cpu_stat.perc, unsigned int, cpu_stat.num_cpus);
+
+	fclose(fp);
 }
 
 void check_mp() {
@@ -824,9 +824,7 @@ char get_wifi(char *status) {
 }
 
 
-
-
-void check_con(con *con) {
+void check_con(t_connection *con) {
     int flags, stat;
 
     if((con->sock = socket(con->domain, SOCK_STREAM, 0)) < 0) {
@@ -932,107 +930,6 @@ char mp_parse_madasul() {
 	return 1;
 }
 
-/*
-void check_con(con *con) {
-    int flags, stat;
-
-    if((con->sock = socket(con->domain, SOCK_STREAM, 0)) < 0) {
-        printf("sock fail\n");
-		con->connected = 0;
-        return;
-    }
-
-    if(con->domain == AF_INET)
-    	stat = connect(con->sock, (struct sockaddr *)&con->sain, sizeof(struct sockaddr));
-    else
-    	stat = connect(con->sock, (struct sockaddr *)&con->saun, sizeof(con->saun.sun_family) + strlen(con->saun.sun_path));
-    if(stat < 0) {
-        close(con->sock);
-		con->connected = 0;
-        return;
-    }
-
-	flags = fcntl(con->sock, F_GETFL, 0);
-	fcntl(con->sock, F_SETFL, flags | O_NONBLOCK);
-
-    con->connected = 1;
-
-	#ifndef USE_ALSAVOL
-	con->fp = fdopen(con->sock, "r");
-	#endif
-}
-
-
-char mpd_parse() {
-    static const char cmd[] = "status\ncurrentsong\n";
-	static char type[128], value[128];
-	char *dp;
-
-	#ifdef USE_ALSAVOL
-	#define SOCKBUFZIZE 1024
-	int n, bufp = 0;
-	static char buf[SOCKBUFZIZE];
-	#endif
-
-    if(send(mp_stat.con.sock, cmd, strlen(cmd), MSG_NOSIGNAL)<0) {
-		mp_stat.con.connected = 0;
-		close(mp_stat.con.sock);
-		return 0;
-	}
-
-	#ifdef USE_ALSAVOL
-	n = read(mp_stat.con.sock, buf, SOCKBUFZIZE);
-	buf[n] = 0;
-
-	while(bufp<n) {
-		if(sscanf(buf+bufp, "%[^:]: %[^\n]\n", type, value) != 2) {
-			bufp+=strlen(type) + strlen(value) + 3;
-			continue;
-		}
-		bufp+=strlen(type) + strlen(value) + 3;
-	#else
-	while(mpd_fp && !feof(mpd_fp)) {
-		if(fscanf(mpd_fp, "%[^:]: %[^\n]\n", type, value) != 2)
-			continue;
-	#endif
-
-		if(strncmp(type, "state", 5)==0) {
-			if(strncmp(value, "play", 4)==0)
-				mp_stat.status = 1;
-			else if(strncmp(value, "stop", 4)==0)
-				mp_stat.status = 2;
-			else
-				mp_stat.status = 0;
-		} else if(strncmp(type, "time", 4)==0) {
-			mp_stat.position = atoi(value);
-			dp = strstr(value, ":");
-			dp++;
-			mp_stat.duration = atoi(dp);
-		} else if(strncmp(type, "Artist", 6)==0) {
-			strncpy(mp_stat.artist, value, 128);
-		} else if(strncmp(type, "Album", 5)==0) {
-			strncpy(mp_stat.album, value, 128);
-		} else if(strncmp(type, "Title", 5)==0) {
-			strncpy(mp_stat.title, value, 128);
-		} else if(strncmp(type, "repeat", 6)==0) {
-			if(strncmp(value, "1", 1)==0)
-				mp_stat.repeat = 1;
-			else
-				mp_stat.repeat = 0;
-		} else if(strncmp(type, "random", 6)==0) {
-			if(strncmp(value, "1", 1)==0)
-				mp_stat.shuffle = 1;
-			else
-				mp_stat.shuffle = 0;
-		} else if(strncmp(type, "volume", 6)==0) {
-			mp_stat.volume = atoi(value);
-		}
-	}
-
-	return 1;
-}
-
-*/
 
 int read_clock(int num, char type[3], unsigned int *target) {
 	static char filename[BUF_SIZE];
@@ -1052,8 +949,6 @@ int read_clock(int num, char type[3], unsigned int *target) {
 	return 1;
 }
 
-
-
 void die(const char *errstr, ...) {
 	va_list ap;
 
@@ -1062,6 +957,7 @@ void die(const char *errstr, ...) {
 	va_end(ap);
 	exit(EXIT_FAILURE);
 }
+
 
 int main(int argc, char **argv) {
 	char stext[max_status_length], ostext[max_status_length];

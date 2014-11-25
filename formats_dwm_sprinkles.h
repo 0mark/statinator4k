@@ -40,12 +40,89 @@ void hexfade(char *ca, char *cb, double val, char r[4]) {
 	return;
 }
 
-
 /* +++ FORMAT FUNCTIONS +++ */
-static inline void datetime_format(char *status) {
-	const struct tm* lt;
-	lt = localtime(&datetime_stat.time);
-	strftime(status + strlen(status), max_status_length - strlen(status), "^[f777;%d.%b %H:%M^[f;", lt);
+#ifdef USE_ALSAVOL
+static inline void alsavol_format(char *status) {
+    static char hv[4];
+	int tvol = alsavol_stat.vol_max - alsavol_stat.vol_min;
+	int perc = tvol ? ((alsavol_stat.vol - alsavol_stat.vol_min) * 10) / tvol : 0;
+
+    hexfade("39d", "343", perc / 10.0, hv);
+
+	aprintf(status, "^[f%s;^[g51,%d;%s", hv, perc, delimiter);
+}
+#endif
+
+static inline void battery_format(char *status) {
+	int i, perc;
+	int totalremaining = 0;
+	int cstate = 1, dstate=0, rate = 0;
+    static char hv[4];
+    static int last[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, pos=0, mean=0;
+
+	for(i=0; i<battery_stats.num_bats; i++) {
+		if(battery_stats.state[i]==BatUnknown) {
+            if(!battery_stats.rate) battery_stats.state[i] = BatCharged;
+        }
+        if(battery_stats.state[i]!=BatCharged) cstate = 0;
+		if(battery_stats.state[i]==BatDischarging) dstate = 1;
+		if(battery_stats.state[i]==BatCharging) dstate = -1;
+		if(battery_stats.rate[i]) rate += battery_stats.rate[i];
+	}
+	last[pos++] = rate;
+	if(pos>=10) {
+		for(int i=0; i<10; i++) {
+			mean += last[i];
+		}
+		mean = mean / 10;
+		pos = 0;
+	} else if(mean==0) {
+		mean = rate;
+	}
+
+	if(cstate) {
+		aprintf(status, "^[f539;^[i0;^[f;");
+	} else {
+		for(i=0; i<battery_stats.num_bats; i++) {
+			perc = battery_stats.capacity[i] ? battery_stats.remaining[i] / (battery_stats.capacity[i] / 100) : 0;
+			if(battery_stats.state[i]==BatCharging/* || (dstate==-1 && battery_stats[i].state==BatCharged)*/) {
+                hexfade("3f4", "f34", perc / 100.0, hv);
+                aprintf(status, "^[f%s;^[g0,%d;^[f;", hv, perc / 10);
+				totalremaining += battery_stats.rate[i] ? ((battery_stats.capacity[i]-battery_stats.remaining[i]) * 60) / battery_stats.rate[i] : 0;
+			} else if(battery_stats.state[i]==BatDischarging || (dstate==1 && (battery_stats.state[i]==BatCharged || battery_stats.state[i]==BatUnknown))) {
+                hexfade("3f4", "f34", perc / 100.0, hv);
+				aprintf(status, "^[f%s;^[g9,%d;^[f;", hv, perc / 10);
+				totalremaining += (mean ? (battery_stats.remaining[i] * 60) / mean : 0);
+			}
+		}
+
+		if(totalremaining>=0)
+			aprintf(status, " ^[f444;[^[fe84;%d:%02d^[f;]^[f0;", totalremaining / 60, totalremaining % 60);
+	}
+	aprintf(status, "%s", delimiter);
+}
+
+static inline void brightness_format(char *status) {
+    int i;
+    static char hv[4];
+
+    for(i=0; i<brightness_stat.num_brght; i++) {
+        hexfade("3f4", "f34", 1.0 * brightness_stat.brghts[i] / brightness_stat.max_brghts[i], hv);
+        aprintf(status, "^[f%s;^[i56;^[f;%s", hv, delimiter);
+    }
+}
+
+static inline void clock_format(char *status) {
+	int i, perc;
+
+	for(i=0; i<clock_stat.num_clocks; i++) {
+		perc = clock_stat.clocks[i] - clock_stat.clock_min;
+		perc = perc ? (perc * 100) / (clock_stat.clock_max - clock_stat.clock_min) : 0;
+		if(i<clock_stat.num_clocks-1)
+			aprintf(status, "^[fea0;^[G15,%d;", perc / 10);
+		else
+			aprintf(status, "^[fea0;^[G15,%d;^[f;", perc / 10);
+	}
 }
 
 static inline void cpu_format(char *status) {
@@ -73,6 +150,12 @@ static inline void cpu_format(char *status) {
 	aprintf(status, " ");
 }
 
+static inline void datetime_format(char *status) {
+	const struct tm* lt;
+	lt = localtime(&datetime_stat.time);
+	strftime(status + strlen(status), max_status_length - strlen(status), "^[f777;%d.%b %H:%M^[f;", lt);
+}
+
 static inline void mem_format(char *status) {
     static char hv[4];
 
@@ -84,38 +167,92 @@ static inline void mem_format(char *status) {
 	aprintf(status, "^[f%s;^[g31,%d;^[f;%s", hv, perc / 10, delimiter);
 }
 
-static inline void clock_format(char *status) {
-	int i, perc;
+#ifdef USE_NOTIFY
+static inline void notify_format(char *status) {
+	char fmt[message_length+30];
+	int offset;
+	int remaining = (notify_stat.message->started_at + notify_stat.message->expires_after) - time(NULL);
+	if(remaining>0)
+		aprintf(status, " ^[fc82;^[g21,%d;^[f; ", remaining);
 
-	for(i=0; i<clock_stat.num_clocks; i++) {
-		perc = clock_stat.clocks[i] - clock_stat.clock_min;
-		perc = perc ? (perc * 100) / (clock_stat.clock_max - clock_stat.clock_min) : 0;
-		if(i<clock_stat.num_clocks-1)
-			aprintf(status, "^[fea0;^[G15,%d;", perc / 10);
-		else
-			aprintf(status, "^[fea0;^[G15,%d;^[f;", perc / 10);
+	aprintf(status, "^[f88e;%s^[f;: ^[f999;%s^[f;", notify_stat.message->appname, notify_stat.message->summary);
+
+	if(notify_stat.message->body[0]!=0) {
+		if(strlen(notify_stat.message->body) < marquee_chars) {
+			aprintf(status, " ^[f444;[^[fe84;%s^[f;]^[f0;", notify_stat.message->body);
+		} else {
+			offset = (time(NULL) - notify_stat.message->started_at) - 1;
+			offset *= marquee_offset;
+			if(offset > strlen(notify_stat.message->body) - marquee_chars)
+				offset = strlen(notify_stat.message->body) - marquee_chars;
+			if(offset<0)
+				offset = 0;
+			snprintf(fmt, message_length+30, " ^[f444;[^[fe84;%%.%ds^[f;]^[f0;", marquee_chars);
+			aprintf(status, fmt, notify_stat.message->body + offset);
+		}
 	}
 }
+#endif
 
-static inline void therm_format(char *status) {
-	int i, perc;
-    static char hv[4];
-	// TODO: get WARNING temp from sys!
-
-	for(i=0; i<therm_stat.num_therms; i++) {
-		perc = therm_stat.therms[i] / 1000 - 40;
-		perc = perc ? (perc * 100) / 80 : 0;
-		if(perc<0) perc = 0;
-		if(perc<=100) {
-            hexfade("f34", "3f4", perc / 100.0, hv);
-			aprintf(status, "^[f%s;%d^[f999;°", hv, therm_stat.therms[i] / 1000);
-		} else if(perc>100)
-			aprintf(status, "^[bf00;^[i27;^[b; ^[ff00;%d^[f;°", therm_stat.therms[i] / 1000);
-		if(i<therm_stat.num_therms-1)
-			aprintf(status, " ");
+#ifdef USE_SOCKETS
+static inline void shrtn(char *s) {
+	char *n = s;
+	s++;
+	n++;
+	while(*s) {
+		switch(*s) {
+			case 'a':
+			case 'e':
+			case 'i':
+			case 'o':
+			case 'u':
+				s++;
+				break;
+			case ' ':
+				s++;
+				while(*s && !((*s>'a' && *s<'z') || (*s>'A' && *s<'Z') || (*s>'0' && *s<'9'))) s++;
+				if(*s && *s>'a' && *s<'z') {
+					*n = *s + 'A'-'a';
+					s++;
+					n++;
+				}
+				break;
+			default:
+				if((*s>'a' && *s<'z') || (*s>'A' && *s<'Z') || (*s>'0' && *s<'9')) {
+					*n = *s;
+					s++;
+					n++;
+				} else {
+					s++;
+				}
+		}
 	}
-	aprintf(status, "%s", delimiter);
+	*n = '\0';
 }
+
+static inline void mp_format(char *status) {
+	int p, v;
+	if(mp_stat.status>0) {
+		//shrtn(mp_stat.artist);
+		//shrtn(mp_stat.title);
+		aprintf(status, "^[feb2;%s^[f26c;-^[fe60;%s", mp_stat.artist, mp_stat.title);
+		if(mp_stat.status==1) {
+			if(mp_stat.duration>=0 && mp_stat.duration>=0) {
+				p = mp_stat.duration ? (mp_stat.position * 10) / mp_stat.duration : 0;
+				aprintf(status, "^[d1;^[f26c;^[h%d;", p);
+			}
+			aprintf(status, "^[d1;%s%s", mp_stat.repeat ? "^[f999;r" : "^[f555;1", mp_stat.shuffle ? "^[f999;s" : "^[f555; ");
+			if(mp_stat.volume>=0) {
+				v = mp_stat.volume * 10 / 100;
+				if(p>9) p = 9;
+				if(v>9) v = 9;
+				aprintf(status, "^[d1;^[f845;^[g51,%d;", v);
+			}
+		}
+		aprintf(status, "^[f0;%s", delimiter);
+	}
+}
+#endif
 
 static inline void calc_traf_sym(int traf, char *status, char *sym, char *col, char *col2) {
     static char hv[4];
@@ -173,167 +310,29 @@ static inline void net_format(char *status) {
 	aprintf(status, "%s", delimiter);
 }
 
+static inline void therm_format(char *status) {
+	int i, perc;
+    static char hv[4];
+	// TODO: get WARNING temp from sys!
+
+	for(i=0; i<therm_stat.num_therms; i++) {
+		perc = therm_stat.therms[i] / 1000 - 40;
+		perc = perc ? (perc * 100) / 80 : 0;
+		if(perc<0) perc = 0;
+		if(perc<=100) {
+            hexfade("f34", "3f4", perc / 100.0, hv);
+			aprintf(status, "^[f%s;%d^[f999;°", hv, therm_stat.therms[i] / 1000);
+		} else if(perc>100)
+			aprintf(status, "^[bf00;^[i27;^[b; ^[ff00;%d^[f;°", therm_stat.therms[i] / 1000);
+		if(i<therm_stat.num_therms-1)
+			aprintf(status, " ");
+	}
+	aprintf(status, "%s", delimiter);
+}
+
 static inline void wifi_format(char *status) {
     static char hv[4];
 
     hexfade("3f4", "f34", wifi_stat.perc / 70.0, hv);
 	aprintf(status, "^[f%s;^[g60,%d;^[f;%s", hv, wifi_stat.perc / 7, delimiter);
 }
-
-static inline void battery_format(char *status) {
-	int i, perc;
-	int totalremaining = 0;
-	int cstate = 1, dstate=0, rate = 0;
-    static char hv[4];
-    static int last[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, pos=0, mean=0;
-
-	for(i=0; i<battery_stats.num_bats; i++) {
-		if(battery_stats.state[i]==BatUnknown) {
-            if(!battery_stats.rate) battery_stats.state[i] = BatCharged;
-        }
-        if(battery_stats.state[i]!=BatCharged) cstate = 0;
-		if(battery_stats.state[i]==BatDischarging) dstate = 1;
-		if(battery_stats.state[i]==BatCharging) dstate = -1;
-		if(battery_stats.rate[i]) rate = battery_stats.rate[i];
-	}
-	last[pos++] = rate;
-	if(pos>=10) {
-		for(int i=0; i<10; i++) {
-			mean += last[i];
-		}
-		mean = mean / 10;
-		pos = 0;
-	} else if(mean==0) {
-		mean = rate;
-	}
-
-	if(cstate) {
-		aprintf(status, "^[f539;^[i0;^[f;");
-	} else {
-		for(i=0; i<battery_stats.num_bats; i++) {
-			perc = battery_stats.capacity[i] ? battery_stats.remaining[i] / (battery_stats.capacity[i] / 100) : 0;
-			if(battery_stats.state[i]==BatCharging/* || (dstate==-1 && battery_stats[i].state==BatCharged)*/) {
-                hexfade("3f4", "f34", perc / 100.0, hv);
-                aprintf(status, "^[f%s;^[g0,%d;^[f;", hv, perc / 10);
-				totalremaining += battery_stats.rate[i] ? ((battery_stats.capacity[i]-battery_stats.remaining[i]) * 60) / battery_stats.rate[i] : 0;
-			} else if(battery_stats.state[i]==BatDischarging || (dstate==1 && (battery_stats.state[i]==BatCharged || battery_stats.state[i]==BatUnknown))) {
-                hexfade("3f4", "f34", perc / 100.0, hv);
-				aprintf(status, "^[f%s;^[g9,%d;^[f;", hv, perc / 10);
-				totalremaining += (mean ? (battery_stats.remaining[i] * 60) / mean : 0);
-			}
-		}
-
-		if(totalremaining>=0)
-			aprintf(status, " ^[f444;[^[fe84;%d:%02d^[f;]^[f0;", totalremaining / 60, totalremaining % 60);
-	}
-	aprintf(status, "%s", delimiter);
-}
-
-static inline void brightness_format(char *status) {
-    int i;
-    static char hv[4];
-
-    for(i=0; i<brightness_stat.num_brght; i++) {
-        hexfade("3f4", "f34", 1.0 * brightness_stat.brghts[i] / brightness_stat.max_brghts[i], hv);
-        aprintf(status, "^[f%s;^[i56;^[f;%s", hv, delimiter);
-    }
-}
-
-static inline void shrtn(char *s) {
-	char *n = s;
-	s++;
-	n++;
-	while(*s) {
-		switch(*s) {
-			case 'a':
-			case 'e':
-			case 'i':
-			case 'o':
-			case 'u':
-				s++;
-				break;
-			case ' ':
-				s++;
-				while(*s && !((*s>'a' && *s<'z') || (*s>'A' && *s<'Z') || (*s>'0' && *s<'9'))) s++;
-				if(*s && *s>'a' && *s<'z') {
-					*n = *s + 'A'-'a';
-					s++;
-					n++;
-				}
-				break;
-			default:
-				if((*s>'a' && *s<'z') || (*s>'A' && *s<'Z') || (*s>'0' && *s<'9')) {
-					*n = *s;
-					s++;
-					n++;
-				} else {
-					s++;
-				}
-		}
-	}
-	*n = '\0';
-}
-
-#ifdef USE_SOCKETS
-static inline void mp_format(char *status) {
-	int p, v;
-	if(mp_stat.status>0) {
-		//shrtn(mp_stat.artist);
-		//shrtn(mp_stat.title);
-		aprintf(status, "^[feb2;%s^[f26c;-^[fe60;%s", mp_stat.artist, mp_stat.title);
-		if(mp_stat.status==1) {
-			if(mp_stat.duration>=0 && mp_stat.duration>=0) {
-				p = mp_stat.duration ? (mp_stat.position * 10) / mp_stat.duration : 0;
-				aprintf(status, "^[d1;^[f26c;^[h%d;", p);
-			}
-			aprintf(status, "^[d1;%s%s", mp_stat.repeat ? "^[f999;r" : "^[f555;1", mp_stat.shuffle ? "^[f999;s" : "^[f555; ");
-			if(mp_stat.volume>=0) {
-				v = mp_stat.volume * 10 / 100;
-				if(p>9) p = 9;
-				if(v>9) v = 9;
-				aprintf(status, "^[d1;^[f845;^[g51,%d;", v);
-			}
-		}
-		aprintf(status, "^[f0;%s", delimiter);
-	}
-}
-#endif
-
-#ifdef USE_ALSAVOL
-static inline void alsavol_format(char *status) {
-    static char hv[4];
-	int tvol = alsavol_stat.vol_max - alsavol_stat.vol_min;
-	int perc = tvol ? ((alsavol_stat.vol - alsavol_stat.vol_min) * 10) / tvol : 0;
-
-    hexfade("39d", "343", perc / 10.0, hv);
-
-	aprintf(status, "^[f%s;^[g51,%d;%s", hv, perc, delimiter);
-}
-#endif
-
-#ifdef USE_NOTIFY
-static inline void notify_format(char *status) {
-	char fmt[message_length+30];
-	int offset;
-	int remaining = (notify_stat.message->started_at + notify_stat.message->expires_after) - time(NULL);
-	if(remaining>0)
-		aprintf(status, " ^[fc82;^[g21,%d;^[f; ", remaining);
-
-	aprintf(status, "^[f88e;%s^[f;: ^[f999;%s^[f;", notify_stat.message->appname, notify_stat.message->summary);
-
-	if(notify_stat.message->body[0]!=0) {
-		if(strlen(notify_stat.message->body) < marquee_chars) {
-			aprintf(status, " ^[f444;[^[fe84;%s^[f;]^[f0;", notify_stat.message->body);
-		} else {
-			offset = (time(NULL) - notify_stat.message->started_at) - 1;
-			offset *= marquee_offset;
-			if(offset > strlen(notify_stat.message->body) - marquee_chars)
-				offset = strlen(notify_stat.message->body) - marquee_chars;
-			if(offset<0)
-				offset = 0;
-			snprintf(fmt, message_length+30, " ^[f444;[^[fe84;%%.%ds^[f;]^[f0;", marquee_chars);
-			aprintf(status, fmt, notify_stat.message->body + offset);
-		}
-	}
-}
-#endif
