@@ -151,12 +151,6 @@ typedef struct { // memory
 	unsigned int cached;
 } t_mem;
 
-#ifdef USE_NOTIFY
-typedef struct { // notifications
-	notification *message;
-} t_notify;
-#endif
-
 #ifdef USE_SOCKETS
 typedef struct {
 	struct hostent* host;
@@ -192,6 +186,12 @@ typedef struct nwstat { // network
 	char **devnames;
 } t_net;
 
+#ifdef USE_NOTIFY
+typedef struct { // notifications
+	notification *message;
+} t_notify;
+#endif
+
 typedef struct { // temperature
 	int num_therms;
 	unsigned int *therms;
@@ -219,9 +219,6 @@ static void check_cpus();
 static char get_cpu(char *status);
 static char get_datetime(char *status);
 static char get_mem(char *status);
-#ifdef USE_NOTIFY
-static char get_messages(char *status);
-#endif
 #ifdef USE_SOCKETS
 static void check_mp();
 static char get_mp();
@@ -230,6 +227,9 @@ static char mp_parse_mpd();
 static char mp_parse_madasul();
 #endif
 static char get_net(char *status);
+#ifdef USE_NOTIFY
+static char get_notification(char *status);
+#endif
 static void check_therms();
 static char get_therm(char *status);
 static char get_wifi(char *status);
@@ -247,13 +247,13 @@ static t_clocks clock_stat;
 static t_cpus cpu_stat;
 static t_date datetime_stat;
 static t_mem mem_stat;
-#ifdef USE_NOTIFY
-static t_notify notify_stat;
-#endif
 #ifdef USE_SOCKETS
 static t_mp mp_stat;
 #endif
 static t_net net_stat;
+#ifdef USE_NOTIFY
+static t_notify notify_stat;
+#endif
 static t_therms therm_stat;
 static t_wifi wifi_stat;
 
@@ -274,7 +274,7 @@ static const status_f statusfuncs[] = {
 	get_alsavol,
 #endif
 #ifdef USE_NOTIFY
-	get_messages,
+	get_notification,
 #endif
 };
 
@@ -321,7 +321,7 @@ void check_batteries() {
 				if(strncmp(label, "POWER_SUPPLY_PRESENT", 20)==0) {
 					if(strncmp(value, "0", 1)==0) break;  // not present battery is not interesting
 					else {                                // (might be wrong, when battery is added)
-						battery_stats.num_bats++;              	  // but this loop looks a bit fishy anyway...
+						battery_stats.num_bats++;         // but this loop looks a bit fishy anyway...
 						XALLOC(battery_stats.name[battery_stats.num_bats], char, strlen(batdirs[i]->d_name) + 1);
 						strcpy(battery_stats.name[battery_stats.num_bats], batdirs[i]->d_name);
 					}
@@ -689,7 +689,7 @@ char get_mem(char *status) {
 }
 
 #ifdef USE_NOTIFY
-char get_messages(char *status) {
+char get_notification(char *status) {
 	int n=0;
 	notify_stat.message = notify_get_message(&n);
 
@@ -718,37 +718,40 @@ char get_mp(char *status) {
 
 char get_net(char *status) {
 	FILE *fp = fopen("/proc/net/dev", "r");
+	unsigned int ch=0, ons = net_stat.count, i;
 
 	if(fp==NULL)
 		return 0;
 
-	unsigned int ch=0, ons = net_stat.count, i;
-
 	net_stat.count = 0;
 	while(!feof(fp)) {
 		while((ch=fgetc(fp)) != '\n' && ch!=EOF);
-		net_stat.count++;
+		if(ch!=EOF) net_stat.count++;
 	}
-	net_stat.count -= 3; // 2 header line and 1 line for lo device
+	net_stat.count -= 2; // 2 header lines
 
-	if(net_stat.count>0) {
-		if(ons!=net_stat.count) {
-			if(ons > 0) {
-				for(i=0; i<net_stat.count; i++) {
-					free(net_stat.devnames[i]);
-				}
-				free(net_stat.tx);
-				free(net_stat.rx);
-				free(net_stat.ltx);
-				free(net_stat.lrx);
-			}
+	if(ons!=net_stat.count) {
+		if(ons > 0) {
+			for(i=0; i<ons; i++)
+				free(net_stat.devnames[i]);
+			free(net_stat.devnames);
+			free(net_stat.tx);
+			free(net_stat.rx);
+			free(net_stat.ltx);
+			free(net_stat.lrx);
+		}
+		if(net_stat.count > 0) {
 			XALLOC(net_stat.devnames, char*, net_stat.count);
+			for(i=0; i<net_stat.count; i++)
+				XALLOC(net_stat.devnames[i], char, 20);
 			XALLOC(net_stat.tx, unsigned int, net_stat.count);
 			XALLOC(net_stat.rx, unsigned int, net_stat.count);
 			XALLOC(net_stat.ltx, unsigned int, net_stat.count);
 			XALLOC(net_stat.lrx, unsigned int, net_stat.count);
 		}
+	}
 
+	if(net_stat.count>0) {
 		rewind(fp);
 
 		while((ch=fgetc(fp)) != '\n' && ch!=EOF);
@@ -758,8 +761,7 @@ char get_net(char *status) {
 		while(!feof(fp) && i<net_stat.count) {
 			net_stat.ltx[i] = net_stat.tx[i];
 			net_stat.lrx[i] = net_stat.rx[i];
-			if(ons!=net_stat.count && net_stat.count) XALLOC(net_stat.devnames[i], char, 20);
-			if(fscanf(fp, " %[^:]: %u %*u %*u %*u %*u %*u %*u %*u %u %*u %*u %*u %*u %*u %*u %*u\n", net_stat.devnames[i], &net_stat.rx[i], &net_stat.tx[i]) != 3) {
+			if(fscanf(fp, " %19[^:]: %u %*u %*u %*u %*u %*u %*u %*u %u %*u %*u %*u %*u %*u %*u %*u\n", net_stat.devnames[i], &net_stat.rx[i], &net_stat.tx[i]) != 3) {
 				fclose(fp);
 				return 0;
 			}
@@ -810,8 +812,7 @@ char get_wifi(char *status) {
 
 	while((ch=fgetc(fp)) != '\n' && ch!=EOF);  // skip 2 header lines
 	while((ch=fgetc(fp)) != '\n' && ch!=EOF);
-                               // might provoke a buffer overflow? TODO
-	if(fscanf(fp, "%s %u %u", wifi_stat.devname, &wifi_stat.wstatus, &wifi_stat.perc) != 3) {
+	if(fscanf(fp, "%19s %u %u", wifi_stat.devname, &wifi_stat.wstatus, &wifi_stat.perc) != 3) {
 		fclose(fp);
 		return 0;
 	}
@@ -1024,10 +1025,6 @@ int main(int argc, char **argv) {
                         strcpy(ostext, stext);
 			sleep(refresh_wait);
 		}
-
-// #ifdef USE_SOCKETS
-// 	if(cmus_sock) close(cmus_sock);
-// #endif
 
 	return 0;
 }

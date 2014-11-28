@@ -167,33 +167,6 @@ static inline void mem_format(char *status) {
 	aprintf(status, "^[f%s;^[g31,%d;^[f;%s", hv, perc / 10, delimiter);
 }
 
-#ifdef USE_NOTIFY
-static inline void notify_format(char *status) {
-	char fmt[message_length+30];
-	int offset;
-	int remaining = (notify_stat.message->started_at + notify_stat.message->expires_after) - time(NULL);
-	if(remaining>0)
-		aprintf(status, " ^[fc82;^[g21,%d;^[f; ", remaining);
-
-	aprintf(status, "^[f88e;%s^[f;: ^[f999;%s^[f;", notify_stat.message->appname, notify_stat.message->summary);
-
-	if(notify_stat.message->body[0]!=0) {
-		if(strlen(notify_stat.message->body) < marquee_chars) {
-			aprintf(status, " ^[f444;[^[fe84;%s^[f;]^[f0;", notify_stat.message->body);
-		} else {
-			offset = (time(NULL) - notify_stat.message->started_at) - 1;
-			offset *= marquee_offset;
-			if(offset > strlen(notify_stat.message->body) - marquee_chars)
-				offset = strlen(notify_stat.message->body) - marquee_chars;
-			if(offset<0)
-				offset = 0;
-			snprintf(fmt, message_length+30, " ^[f444;[^[fe84;%%.%ds^[f;]^[f0;", marquee_chars);
-			aprintf(status, fmt, notify_stat.message->body + offset);
-		}
-	}
-}
-#endif
-
 #ifdef USE_SOCKETS
 static inline void shrtn(char *s) {
 	char *n = s;
@@ -271,44 +244,114 @@ static inline void calc_traf_sym(int traf, char *status, char *sym, char *col, c
     aprintf(status, "^[f444;%s", sym);
 }
 
+// static inline void net_format(char *status) {
+// 	int i, pdev=-1, drx, dtx, dsym = 28;
+// 	if(net_stat.count>0) {
+// 		for(i=0; i<net_stat.count; i++) {
+// 			if(!strncmp(net_stat.devnames[i], "wlan", 3) && net_stat.rx[i] && pdev==-1) {
+// 				pdev = i;
+// 				dsym = 60;
+// 			}
+// 			if(!strncmp(net_stat.devnames[i], "eth", 3) && net_stat.rx[i] && pdev==-1) {
+// 				pdev = i;
+// 				dsym = 39;
+// 			}
+// 			if((!strncmp(net_stat.devnames[i], "tun", 3) || !strncmp(net_stat.devnames[i], "tap", 3)) && net_stat.rx[i]) {
+// 				pdev = i;
+// 				dsym = 50;
+// 			}
+// 			if(!strncmp(net_stat.devnames[i], "usb", 3) && net_stat.rx[i] && pdev==-1) {
+// 				pdev = i;
+// 				dsym = 57;
+// 			}
+// 			if(!strncmp(net_stat.devnames[i], "ppp", 3) && net_stat.rx[i] && pdev==-1) {
+// 				pdev = i;
+// 				dsym = 53;
+// 			}
+// 		}
+// 		if(pdev>=0) {
+// 			dtx = net_stat.tx[pdev]-net_stat.ltx[pdev];
+// 			drx = net_stat.rx[pdev]-net_stat.lrx[pdev];
+// 			calc_traf_sym(dtx, status, "^[i38;", "f45", "645");
+// 			calc_traf_sym(drx, status, "^[i35;", "5f4", "564");
+// 			aprintf(status, "^[f555;^[i%d;^[f0;", dsym);
+// 		} else
+// 			aprintf(status, "^[f555;^[i33;^[f;");
+// 	} else
+// 		aprintf(status, "^[f555;^[i33;^[f;");
+// 	aprintf(status, "%s", delimiter);
+// }
+
 static inline void net_format(char *status) {
+	static unsigned int ons = 0, *noc = NULL;
 	int i, pdev=-1, drx, dtx, dsym = 28;
-	if(net_stat.count>0) {
+	if(ons!=net_stat.count) {
+		if(noc)
+			free(noc);
+		XALLOC(noc, unsigned int, net_stat.count);
+		ons = net_stat.count;
+	}
+	// if(net_stat.count>0) {
 		for(i=0; i<net_stat.count; i++) {
-			if(!strncmp(net_stat.devnames[i], "wlan", 3) && net_stat.rx[i] && pdev==-1) {
-				pdev = i;
+			// printf("%d, %s, %d, %d\n", i, net_stat.devnames[i], net_stat.tx[i]-net_stat.ltx[i], net_stat.rx[i]-net_stat.lrx[i]);
+			if(!strncmp(net_stat.devnames[i], "lo", 3))
+				continue;
+			else if(!strncmp(net_stat.devnames[i], "wlan", 3))
 				dsym = 60;
-			}
-			if(!strncmp(net_stat.devnames[i], "eth", 3) && net_stat.rx[i] && pdev==-1) {
-				pdev = i;
+			else if(!strncmp(net_stat.devnames[i], "eth", 3))
 				dsym = 39;
-			}
-			if((!strncmp(net_stat.devnames[i], "tun", 3) || !strncmp(net_stat.devnames[i], "tap", 3)) && net_stat.rx[i]) {
-				pdev = i;
+			else if((!strncmp(net_stat.devnames[i], "tun", 3) || !strncmp(net_stat.devnames[i], "tap", 3)))
 				dsym = 50;
-			}
-			if(!strncmp(net_stat.devnames[i], "usb", 3) && net_stat.rx[i] && pdev==-1) {
-				pdev = i;
+			else if(!strncmp(net_stat.devnames[i], "usb", 3) && net_stat.rx[i])
 				dsym = 57;
-			}
-			if(!strncmp(net_stat.devnames[i], "ppp", 3) && net_stat.rx[i] && pdev==-1) {
-				pdev = i;
+			else if(!strncmp(net_stat.devnames[i], "ppp", 3) && net_stat.rx[i])
 				dsym = 53;
+			
+		// }
+		// if(pdev>=0) {
+			dtx = net_stat.tx[i]-net_stat.ltx[i];
+			drx = net_stat.rx[i]-net_stat.lrx[i];
+		printf("%d, %d\n", i, ons);
+			noc[i] = !dtx && !drx ? noc[i] + 1 : 0;
+			if(noc[i]<10) {
+				calc_traf_sym(dtx, status, "^[i38;", "f45", "645");
+				calc_traf_sym(drx, status, "^[i35;", "5f4", "564");
+				aprintf(status, "^[f555;^[i%d;^[f0;", dsym);
 			}
 		}
-		if(pdev>=0) {
-			dtx = net_stat.tx[pdev]-net_stat.ltx[pdev];
-			drx = net_stat.rx[pdev]-net_stat.lrx[pdev];
-			//aprintf(status, "^[f%s;^[i38;^[f%s;^[i35;", dtx<100 ? "444" : "845", drx<100 ? "444" : "584");
-			calc_traf_sym(dtx, status, "^[i38;", "f45", "645");
-			calc_traf_sym(drx, status, "^[i35;", "5f4", "564");
-			aprintf(status, "^[f555;^[i%d;^[f0;", dsym);
-		} else
-			aprintf(status, "^[f555;^[i33;^[f;");
-	} else
-		aprintf(status, "^[f555;^[i33;^[f;");
+		// } else
+			// aprintf(status, "^[f555;^[i33;^[f;");
+	// } else
+		// aprintf(status, "^[f555;^[i33;^[f;");
 	aprintf(status, "%s", delimiter);
 }
+
+#ifdef USE_NOTIFY
+static inline void notify_format(char *status) {
+	char fmt[message_length+30];
+	int offset;
+	int remaining = (notify_stat.message->started_at + notify_stat.message->expires_after) - time(NULL);
+	if(remaining>0)
+		aprintf(status, " ^[fc82;^[g21,%d;^[f; ", remaining);
+
+	aprintf(status, "^[f88e;%s^[f;: ^[f999;%s^[f;", notify_stat.message->appname, notify_stat.message->summary);
+
+	if(notify_stat.message->body[0]!=0) {
+		if(strlen(notify_stat.message->body) < marquee_chars) {
+			aprintf(status, " ^[f444;[^[fe84;%s^[f;]^[f0;", notify_stat.message->body);
+		} else {
+			offset = (time(NULL) - notify_stat.message->started_at) - 1;
+			offset *= marquee_offset;
+			if(offset > strlen(notify_stat.message->body) - marquee_chars)
+				offset = strlen(notify_stat.message->body) - marquee_chars;
+			if(offset<0)
+				offset = 0;
+			snprintf(fmt, message_length+30, " ^[f444;[^[fe84;%%.%ds^[f;]^[f0;", marquee_chars);
+			aprintf(status, fmt, notify_stat.message->body + offset);
+		}
+	}
+}
+#endif
 
 static inline void therm_format(char *status) {
 	int i, perc;
