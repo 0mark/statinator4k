@@ -5,7 +5,6 @@ static int max_status_length   = 512;       // max length of status
 static int auto_delimiter      = 0;         // automagically add delimiter on success
 static char delimiter[]        = "^[f37C;|^[f;";    // delimiter ^[d;
 static char *brightnes_names[] = { "acpi_video0" };
-static char *clockfile         = "cpuinfo";
 #ifdef USE_NOTIFY
 static int marquee_chars       = 30;        // TODO: description!
 static int marquee_offset      = 3;         // TODO: description!
@@ -13,8 +12,10 @@ static int message_length      = 10;        // TODO: description!
 #endif
 #ifdef USE_SOCKETS
 static char mp_adress[]        = "127.0.0.1";
-static int mp_port             = 6600;
-static char (*mp_parse)()      = mpd_parse;
+//static int mp_port             = 6600;
+//static char (*mp_parse)()      = mp_parse_mpd;
+static int mp_port             = 6666;
+static char (*mp_parse)()      = mp_parse_madasul;
 #endif
 #ifdef USE_ALSAVOL
 static const char ATTACH[]     = "default"; // device
