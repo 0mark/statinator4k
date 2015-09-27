@@ -326,7 +326,7 @@ void check_batteries() {
 						strcpy(battery_stats.name[battery_stats.num_bats], batdirs[i]->d_name);
 					}
 				}
-				if(strncmp(label, "POWER_SUPPLY_ENERGY_FULL", 24)==0 && strlen(label)==24) {
+				if((strncmp(label, "POWER_SUPPLY_ENERGY_FULL", 24)==0 && strlen(label)==24) || (strncmp(label, "POWER_SUPPLY_CHARGE_FULL", 24)==0 && strlen(label)==24)) {
 					battery_stats.capacity[battery_stats.num_bats] = atoi(value);
 					break;
 				}
@@ -555,16 +555,16 @@ char get_battery(char *status) {
 					battery_stats.state[i] = BatCharging;
 				else if(strncmp(value, "Discharging", 11)==0)
 					battery_stats.state[i] = BatDischarging;
-				else if(strncmp(value, "Charged", 7)==0)
+				else if(strncmp(value, "Charged", 7)==0 || strncmp(value, "Full", 5)==0)
 					battery_stats.state[i] = BatCharged;
 				else
 					battery_stats.state[i] = BatUnknown;
 			}
-			else if(strncmp(label, "POWER_SUPPLY_POWER_NOW", 23)==0) {
+			else if(strncmp(label, "POWER_SUPPLY_POWER_NOW", 23)==0 || strncmp(label, "POWER_SUPPLY_CURRENT_NOW", 25)==0) {
 				battery_stats.rate[i] = atoi(value);
 				if(battery_stats.rate[i] < 0) battery_stats.rate[i]=1;
 			}
-			else if(strncmp(label, "POWER_SUPPLY_ENERGY_NOW", 22)==0) {
+			else if(strncmp(label, "POWER_SUPPLY_ENERGY_NOW", 22)==0 || strncmp(label, "POWER_SUPPLY_CHARGE_NOW", 22)==0) {
 				battery_stats.remaining[i] = atoi(value);
 			}
 
