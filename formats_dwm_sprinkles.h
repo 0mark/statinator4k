@@ -49,7 +49,7 @@ static inline void alsavol_format(char *status) {
 
     hexfade("39d", "343", perc / 10.0, hv);
 
-	aprintf(status, "^[f%s;^[g51,%d;%s", hv, perc, delimiter);
+	aprintf(status, "^[f%s;^[g50,%d;%s", hv, perc, delimiter);
 }
 #endif
 
@@ -57,8 +57,8 @@ static inline void battery_format(char *status) {
 	int i, perc;
 	int totalremaining = 0;
 	int cstate = 1, dstate=0, rate = 0;
-    static char hv[4];
-    static int last[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, pos=0, mean=0;
+	static char hv[4];
+	static int last[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, pos=0, mean=0;
 
 	for(i=0; i<battery_stats.num_bats; i++) {
 		if(battery_stats.state[i]==BatUnknown) {
@@ -86,12 +86,12 @@ static inline void battery_format(char *status) {
 		for(i=0; i<battery_stats.num_bats; i++) {
 			perc = battery_stats.capacity[i] ? battery_stats.remaining[i] / (battery_stats.capacity[i] / 100) : 0;
 			if(battery_stats.state[i]==BatCharging/* || (dstate==-1 && battery_stats[i].state==BatCharged)*/) {
-                hexfade("3f4", "f34", perc / 100.0, hv);
-                aprintf(status, "^[f%s;^[g0,%d;^[f;", hv, perc / 10);
+				hexfade("3f4", "f34", perc / 100.0, hv);
+				aprintf(status, "^[f%s;^[g0,%d;^[f;", hv, perc / 10);
 				totalremaining += battery_stats.rate[i] ? ((battery_stats.capacity[i]-battery_stats.remaining[i]) * 60) / battery_stats.rate[i] : 0;
 			} else if(battery_stats.state[i]==BatDischarging || (dstate==1 && (battery_stats.state[i]==BatCharged || battery_stats.state[i]==BatUnknown))) {
-                hexfade("3f4", "f34", perc / 100.0, hv);
-				aprintf(status, "^[f%s;^[g9,%d;^[f;", hv, perc / 10);
+				hexfade("3f4", "f34", perc / 100.0, hv);
+				aprintf(status, "^[f%s;^[g8,%d;^[f;", hv, perc / 10);
 				totalremaining += (mean ? (battery_stats.remaining[i] * 60) / mean : 0);
 			}
 		}
@@ -108,7 +108,7 @@ static inline void brightness_format(char *status) {
 
     for(i=0; i<brightness_stat.num_brght; i++) {
         hexfade("3f4", "f34", 1.0 * brightness_stat.brghts[i] / brightness_stat.max_brghts[i], hv);
-        aprintf(status, "^[f%s;^[i56;^[f;%s", hv, delimiter);
+        aprintf(status, "^[f%s;^[i55;^[f;%s", hv, delimiter);
     }
 }
 
@@ -119,9 +119,9 @@ static inline void clock_format(char *status) {
 		perc = clock_stat.clocks[i] - clock_stat.clock_min;
 		perc = perc ? (perc * 100) / (clock_stat.clock_max - clock_stat.clock_min) : 0;
 		if(i<clock_stat.num_clocks-1)
-			aprintf(status, "^[fea0;^[G15,%d;", perc / 10);
+			aprintf(status, "^[fea0;^[G14,%d;", perc / 10);
 		else
-			aprintf(status, "^[fea0;^[G15,%d;^[f;", perc / 10);
+			aprintf(status, "^[fea0;^[G14,%d;^[f;", perc / 10);
 	}
 }
 
@@ -137,7 +137,7 @@ static inline void cpu_format(char *status) {
 
 		if(perc>100) perc=100;
 
-	    hexfade("f34", "3f4", perc / 100.0, hv);
+		hexfade("f34", "3f4", perc / 100.0, hv);
 
 		p = perc / 10;
 		// ^[i15;	 : Show pixmap CPU Symbol
@@ -162,9 +162,9 @@ static inline void mem_format(char *status) {
 	int free = mem_stat.free + mem_stat.buffers + mem_stat.cached;
 	int perc = mem_stat.total ? (free * 100) / mem_stat.total : 0;
 
-    hexfade("3f4", "f34", perc / 100.0, hv);
+	hexfade("3f4", "f34", perc / 100.0, hv);
 
-	aprintf(status, "^[f%s;^[g31,%d;^[f;%s", hv, perc / 10, delimiter);
+	aprintf(status, "^[f%s;^[g30,%d;^[f;%s", hv, perc / 10, delimiter);
 }
 
 #ifdef USE_SOCKETS
@@ -297,25 +297,25 @@ static inline void net_format(char *status) {
 			if(!strncmp(net_stat.devnames[i], "lo", 3))
 				continue;
 			else if(!strncmp(net_stat.devnames[i], "wlan", 3))
-				dsym = 60;
+				dsym = 59;
 			else if(!strncmp(net_stat.devnames[i], "eth", 3))
-				dsym = 39;
+				dsym = 38;
 			else if((!strncmp(net_stat.devnames[i], "tun", 3) || !strncmp(net_stat.devnames[i], "tap", 3)))
-				dsym = 50;
+				dsym = 49;
 			else if(!strncmp(net_stat.devnames[i], "usb", 3) && net_stat.rx[i])
-				dsym = 57;
+				dsym = 56;
 			else if(!strncmp(net_stat.devnames[i], "ppp", 3) && net_stat.rx[i])
-				dsym = 53;
+				dsym = 52;
 			
 		// }
 		// if(pdev>=0) {
 			dtx = net_stat.tx[i]-net_stat.ltx[i];
 			drx = net_stat.rx[i]-net_stat.lrx[i];
-		printf("%d, %d\n", i, ons);
+			//printf("%d, %d\n", i, ons);
 			noc[i] = !dtx && !drx ? noc[i] + 1 : 0;
 			if(noc[i]<10) {
-				calc_traf_sym(dtx, status, "^[i38;", "f45", "645");
-				calc_traf_sym(drx, status, "^[i35;", "5f4", "564");
+				calc_traf_sym(dtx, status, "^[i37;", "f45", "645");
+				calc_traf_sym(drx, status, "^[i34;", "5f4", "564");
 				aprintf(status, "^[f555;^[i%d;^[f0;", dsym);
 			}
 		}
@@ -366,7 +366,7 @@ static inline void therm_format(char *status) {
             hexfade("f34", "3f4", perc / 100.0, hv);
 			aprintf(status, "^[f%s;%d^[f999;°", hv, therm_stat.therms[i] / 1000);
 		} else if(perc>100)
-			aprintf(status, "^[bf00;^[i27;^[b; ^[ff00;%d^[f;°", therm_stat.therms[i] / 1000);
+			aprintf(status, "^[bf00;^[i26;^[b; ^[ff00;%d^[f;°", therm_stat.therms[i] / 1000);
 		if(i<therm_stat.num_therms-1)
 			aprintf(status, " ");
 	}
@@ -377,5 +377,5 @@ static inline void wifi_format(char *status) {
     static char hv[4];
 
     hexfade("3f4", "f34", wifi_stat.perc / 70.0, hv);
-	aprintf(status, "^[f%s;^[g60,%d;^[f;%s", hv, wifi_stat.perc / 7, delimiter);
+	aprintf(status, "^[f%s;^[g59,%d;^[f;%s", hv, wifi_stat.perc / 7, delimiter);
 }
