@@ -96,8 +96,11 @@ static inline void battery_format(char *status) {
 			}
 		}
 
-		if(totalremaining>=0)
-			aprintf(status, " ^[f444;[^[fe84;%d:%02d^[f;]^[f0;", totalremaining / 60, totalremaining % 60);
+		if(totalremaining>=0) {
+			perc = ((battery_stats.rate[i] - 3) * 100) / 18;
+			hexfade("3f4", "f34", perc / 100.0, hv);
+			aprintf(status, " ^[f444;[^[f%s;%d:%02d^[f;]^[f;", hv, totalremaining / 60, totalremaining % 60);
+		}
 	}
 	aprintf(status, "%s", delimiter);
 }
@@ -284,7 +287,7 @@ static inline void calc_traf_sym(int traf, char *status, char *sym, char *col, c
 
 static inline void net_format(char *status) {
 	static unsigned int ons = 0, *noc = NULL;
-	int i, pdev=-1, drx, dtx, dsym = 28;
+	int i, /*pdev=-1,*/ drx, dtx, dsym = 28;
 	if(ons!=net_stat.count) {
 		if(noc)
 			free(noc);
@@ -306,7 +309,6 @@ static inline void net_format(char *status) {
 				dsym = 56;
 			else if(!strncmp(net_stat.devnames[i], "ppp", 3) && net_stat.rx[i])
 				dsym = 52;
-			
 		// }
 		// if(pdev>=0) {
 			dtx = net_stat.tx[i]-net_stat.ltx[i];
@@ -316,7 +318,7 @@ static inline void net_format(char *status) {
 			if(noc[i]<10) {
 				calc_traf_sym(dtx, status, "^[i37;", "f45", "645");
 				calc_traf_sym(drx, status, "^[i34;", "5f4", "564");
-				aprintf(status, "^[f555;^[i%d;^[f0;", dsym);
+				aprintf(status, "^[f555;^[i%d;^[f;", dsym);
 			}
 		}
 		// } else
@@ -338,7 +340,7 @@ static inline void notify_format(char *status) {
 
 	if(notify_stat.message->body[0]!=0) {
 		if(strlen(notify_stat.message->body) < marquee_chars) {
-			aprintf(status, " ^[f444;[^[fe84;%s^[f;]^[f0;", notify_stat.message->body);
+			aprintf(status, " ^[f444;[^[fe84;%s^[f;]^[f;", notify_stat.message->body);
 		} else {
 			offset = (time(NULL) - notify_stat.message->started_at) - 1;
 			offset *= marquee_offset;
@@ -346,7 +348,7 @@ static inline void notify_format(char *status) {
 				offset = strlen(notify_stat.message->body) - marquee_chars;
 			if(offset<0)
 				offset = 0;
-			snprintf(fmt, message_length+30, " ^[f444;[^[fe84;%%.%ds^[f;]^[f0;", marquee_chars);
+			snprintf(fmt, message_length+30, " ^[f444;[^[fe84;%%.%ds^[f;]^[f;", marquee_chars);
 			aprintf(status, fmt, notify_stat.message->body + offset);
 		}
 	}
@@ -359,6 +361,7 @@ static inline void therm_format(char *status) {
 	// TODO: get WARNING temp from sys!
 
 	for(i=0; i<therm_stat.num_therms; i++) {
+		if(i!=2) continue;
 		perc = therm_stat.therms[i] / 1000 - 40;
 		perc = perc ? (perc * 100) / 80 : 0;
 		if(perc<0) perc = 0;
